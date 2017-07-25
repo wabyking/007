@@ -9,30 +9,30 @@ class DataHelper():
 		self.conf=conf
 		self.train = self.loadData("train")
 		self.test = self.loadData("test")
-		self.u_cnt= self.train["uid"].max()+1
-		self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
-
+		self.u_cnt = self.train["uid"].max()+1
+		self.i_cnt = self.train["itemid"].max()+1   # index starts with one instead of zero
 	def create_dirs(dirname):
 		if not os.path.exists(dirname):
 			os.makedirs(dirname)
 
 	def loadData(self, data_type='train'):
-		data_dir="data\\"+self.conf.dataset
-		if data_type=="train":
-			filename = os.path.join(data_dir, self.conf.train_file_name)
-		
-		elif data_type=="test":
+		data_dir = "data/" + self.conf.dataset
+        
+		if data_type == "train":
+			filename = os.path.join(data_dir, self.conf.train_file_name)		
+		elif data_type == "test":
 		 	filename = os.path.join(data_dir, self.conf.test_file_name)
 		else:
 			print("no such data type")
 			exit(0)
+        
 		df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
 
 		stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
-		df["date"]= df["timestamp"].apply(stamp2date)
-		min_day=df["date"].min()
-		df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(1970,1,1)).dt.days
-		df["days"]=df["days"] -df["days"].min()
+		df["date"] = df["timestamp"].apply(stamp2date)
+		min_day = df["date"].min()
+		df["days"] = (pd.to_datetime(df["date"]) - pd.datetime(1970,1,1)).dt.days
+		df["days"] = df["days"] -df["days"].min()
 		# df = df[ df.date.str >"1997-09" & df.date < "1998-04"]
 		return df
 
@@ -73,7 +73,6 @@ class DataHelper():
 	def getBatch(self,dict_pickle_file="user_item_dict.pkl", samples_pickle_file="samples.pkl",shuffle= False):
 		if os.path.exists(samples_pickle_file):
 			samples=pickle.load(open(samples_pickle_file, 'rb'))
-			print("samples load over")
 		else:
 			df= self.train.copy()
 
@@ -85,7 +84,7 @@ class DataHelper():
 				user_dict,item_dict={},{}
 				user_windows = df.groupby("uid").apply(self.user_windows_apply,user_dict=user_dict)
 				item_windows = df.groupby("itemid").apply(self.item_windows_apply,item_dict=item_dict)
-				pickle.dump([user_dict,item_dict], open(dict_pickle_file, 'wb'),protocol=2)
+				#pickle.dump([user_dict,item_dict], open(dict_pickle_file, 'wb'),protocol=2)
 
 			samples=[]
 			print (len(df[df["user_granularity"]>=self.conf.user_windows_size ]))
@@ -151,10 +150,11 @@ def main():
 	FLAGS=getTestFlag()
 	helper=DataHelper(FLAGS)
 	print (helper.u_cnt)
-	print (helper.i_cnt)
+	print (helper.i_cnt)    
+                    
 	for x,y,z in helper.getBatch():
 		print(np.array(x).shape)
 		exit()
 
-if __name__=="__main__":
-	main()
+#if __name__=="__main__":
+#	main()
