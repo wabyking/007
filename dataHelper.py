@@ -8,7 +8,7 @@ class DataHelper():
 	def __init__(self,conf):
 		self.conf=conf
 		self.train = self.loadData("train")
-		self.test = self.loadData("test")
+		# self.test = self.loadData("test")
 		self.u_cnt= self.train["uid"].max()+1
 		self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
 
