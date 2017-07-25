@@ -96,9 +96,9 @@ class RNNGenerator(object):
         x_usr = self._user_embedding(inputs=self.user_sequence)    
 
         loss = 0.0
-#        loss_list = [] 
-        itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
-        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
+#        loss_list = []
+        itm_lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
+        usr_lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
         
         for t in range(self.T):
             with tf.variable_scope('itm_lstm', reuse=(t!=0)):

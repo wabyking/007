@@ -9,30 +9,30 @@ class DataHelper():
 		self.conf=conf
 		self.train = self.loadData("train")
 		self.test = self.loadData("test")
-		self.u_cnt = self.train["uid"].max()+1
-		self.i_cnt = self.train["itemid"].max()+1   # index starts with one instead of zero
+		self.u_cnt= self.train["uid"].max()+1
+		self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
+
 	def create_dirs(dirname):
 		if not os.path.exists(dirname):
 			os.makedirs(dirname)
 
 	def loadData(self, data_type='train'):
-		data_dir = "data/" + self.conf.dataset
-        
-		if data_type == "train":
-			filename = os.path.join(data_dir, self.conf.train_file_name)		
-		elif data_type == "test":
+		data_dir="data\\"+self.conf.dataset
+		if data_type=="train":
+			filename = os.path.join(data_dir, self.conf.train_file_name)
+		
+		elif data_type=="test":
 		 	filename = os.path.join(data_dir, self.conf.test_file_name)
 		else:
 			print("no such data type")
 			exit(0)
-        
 		df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
 
 		stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
-		df["date"] = df["timestamp"].apply(stamp2date)
-		min_day = df["date"].min()
-		df["days"] = (pd.to_datetime(df["date"]) - pd.datetime(1970,1,1)).dt.days
-		df["days"] = df["days"] -df["days"].min()
+		df["date"]= df["timestamp"].apply(stamp2date)
+		min_day=df["date"].min()
+		df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(1970,1,1)).dt.days
+		df["days"]=df["days"] -df["days"].min()
 		# df = df[ df.date.str >"1997-09" & df.date < "1998-04"]
 		return df
 
@@ -70,26 +70,33 @@ class DataHelper():
 		return i_seq
 
 		
-	def getBatch(self,dict_pickle_file="user_item_dict.pkl", samples_pickle_file="samples.pkl",shuffle= False):
+	def getBatch(self,dict_pickle_file="user_item_dict.pkl", samples_pickle_file="samples.pkl",shuffle= False,flag="train"):
 		if os.path.exists(samples_pickle_file):
 			samples=pickle.load(open(samples_pickle_file, 'rb'))
+			print("samples load over")
 		else:
 			df= self.train.copy()
 
 			df["user_granularity"] = df["days"] // self.conf.user_delta   # //means floor div
 			df["item_granularity"] = df["days"] // self.conf.item_delta   # //means floor div
+
 			if os.path.exists(dict_pickle_file):
 				user_dict,item_dict= pickle.load(open(dict_pickle_file, 'rb'))
 			else:
 				user_dict,item_dict={},{}
 				user_windows = df.groupby("uid").apply(self.user_windows_apply,user_dict=user_dict)
 				item_windows = df.groupby("itemid").apply(self.item_windows_apply,item_dict=item_dict)
-				#pickle.dump([user_dict,item_dict], open(dict_pickle_file, 'wb'),protocol=2)
+				pickle.dump([user_dict,item_dict], open(dict_pickle_file, 'wb'),protocol=2)
 
 			samples=[]
-			print (len(df[df["user_granularity"]>=self.conf.user_windows_size ]))
-			
-			for t in range(self.conf.user_windows_size,df["user_granularity"].max()+1): # because  item_windows_size== user_windows_size and user_delta ==item_delta
+			# print (len(df[df["user_granularity"]>=self.conf.user_windows_size ]))
+			if flag=="train":
+				start=self.conf.user_windows_size
+				end=df["user_granularity"].max()+1 - self.conf.test_granularity_count
+			else:
+				start=df["user_granularity"].max()+1 - self.conf.test_granularity_count
+				end=df["user_granularity"].max()+1
+			for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
 				print(t)
 				for index,row in df[df.user_granularity==t].iterrows():
 					userid =row["uid"]
@@ -97,7 +104,7 @@ class DataHelper():
 					rating =row["rating"]
 					item_seqs,user_seqs=[],[]
 					for pre_t in range(t-self.conf.user_windows_size ,t):	
-						print(user_dict[userid].get(pre_t,None))	
+						# print(user_dict[userid].get(pre_t,None))	
 						user_seqs.append(user_dict[userid].get(pre_t,None))
 						item_seqs.append(item_dict[itemid].get(pre_t,None))
 					samples.append((user_seqs,item_seqs,rating))
@@ -106,7 +113,7 @@ class DataHelper():
 			# print( np.array(batch_user_seqs).shape)
 			pickle.dump(samples, open("samples.pkl", 'wb'),protocol=2)
 		
-		if shuffle:
+		if flag=="train" and shuffle:
 			samples = np.random.permutation(samples)
 		print(len(samples))
 		n_batches= int(len(samples)/ self.conf.batch_size)
@@ -150,11 +157,15 @@ def main():
 	FLAGS=getTestFlag()
 	helper=DataHelper(FLAGS)
 	print (helper.u_cnt)
-	print (helper.i_cnt)    
-                    
+	print (helper.i_cnt)
+	i=0
 	for x,y,z in helper.getBatch():
-		print(np.array(x).shape)
-		exit()
+		# print(np.array(x).shape)
+		# print(np.array(y).shape)
+		# print(np.array(z).shape)
+		print(i)
+		i+=1
 
-#if __name__=="__main__":
-#	main()
+
+if __name__=="__main__":
+	main()
