@@ -70,11 +70,11 @@ saver = tf.train.Saver(max_to_keep=40)
 for e in range(FLAGS.n_epochs):
     curr_loss = 0  
     start_t = time.time()
-    # for x,y,z in helper.getBatch():
-    #     _,l = model.pretrain_step(sess, x, y, z)
-    #     curr_loss += l
-    #     print( "Elapsed time: ", time.time() - start_t)
-    #     print( "Current epoch loss: ", l)
+    for x,y,z in helper.getBatch():
+        _,l = model.pretrain_step(sess, x, y, z)
+        curr_loss += l
+        # print( "Elapsed time: ", time.time() - start_t)
+        print( "Current epoch loss: ", l)
 
 
     results=np.array([])

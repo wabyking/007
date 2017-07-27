@@ -3,11 +3,13 @@ import os
 import datetime
 import numpy as np 
 import pickle
-
+import config
+from tools import log_time_delta
 class DataHelper():
 	def __init__(self,conf):
 		self.conf=conf
 		self.train = self.loadData("train")
+
 		# self.test = self.loadData("test")
 		self.u_cnt= self.train["uid"].max()+1
 		self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
@@ -16,6 +18,7 @@ class DataHelper():
 		if not os.path.exists(dirname):
 			os.makedirs(dirname)
 
+	@log_time_delta
 	def loadData(self, data_type='train'):
 		data_dir="data\\"+self.conf.dataset
 		if data_type=="train":
@@ -28,12 +31,21 @@ class DataHelper():
 			exit(0)
 		df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
 
-		stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
-		df["date"]= df["timestamp"].apply(stamp2date)
-		min_day=df["date"].min()
-		df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(1970,1,1)).dt.days
-		df["days"]=df["days"] -df["days"].min()
+		if self.conf.dataset == "moviesLen-100k":
+			stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
+			df["date"]= df["timestamp"].apply(stamp2date)
+		else:
+			df["date"]= df["timestamp"]
+
+		# df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(1970,1,1)).dt.days
+		# df["days"]=df["days"] -df["days"].min()
+		y,m,d =	(int(i) for i in self.conf.split_data.split("-"))
+		df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(y,m,d )).dt.days
+
 		# df = df[ df.date.str >"1997-09" & df.date < "1998-04"]
+
+		df["user_granularity"] = df["days"] // self.conf.user_delta   # //means floor div
+		df["item_granularity"] = df["days"] // self.conf.item_delta   # //means floor div
 		return df
 
 	def user_windows_apply(self,group,user_dict):
@@ -54,6 +66,7 @@ class DataHelper():
 			# print (item_dict[itemid][item_granularity])
 		return len(group["item_granularity"].unique())
 
+
 	def getUserVector(self,user_set):
 		u_seq=[0]*(self.i_cnt)
 		
@@ -70,15 +83,14 @@ class DataHelper():
 		return i_seq
 
 		
-	def getBatch(self,dict_pickle_file="user_item_dict.pkl", samples_pickle_file="samples.pkl",shuffle= False,flag="train"):
+	def getBatch(self,shuffle= True,flag="train"):
+		samples_pickle_file="tmp/samples_"+self.conf.dataset+"_"+flag+".pkl"
+		dict_pickle_file="tmp/user_item_"+self.conf.dataset+".pkl"
 		if os.path.exists(samples_pickle_file):
 			samples=pickle.load(open(samples_pickle_file, 'rb'))
 			print("samples load over")
 		else:
-			df= self.train.copy()
-
-			df["user_granularity"] = df["days"] // self.conf.user_delta   # //means floor div
-			df["item_granularity"] = df["days"] // self.conf.item_delta   # //means floor div
+			df= self.train.copy()		
 
 			if os.path.exists(dict_pickle_file):
 				user_dict,item_dict= pickle.load(open(dict_pickle_file, 'rb'))
@@ -90,11 +102,14 @@ class DataHelper():
 
 			samples=[]
 			# print (len(df[df["user_granularity"]>=self.conf.user_windows_size ]))
+			print( "train size %d "% len(df[(df.user_granularity > df.user_granularity.min() + self.conf.user_windows_size) & (df.user_granularity <0 ) ] ))
+			print( "train size %d "% len(df[df.user_granularity >= 0 ] ))
+			# exit()
 			if flag=="train":
-				start=self.conf.user_windows_size
-				end=df["user_granularity"].max()+1 - self.conf.test_granularity_count
+				start=df["user_granularity"].min()+self.conf.user_windows_size
+				end=0
 			else:
-				start=df["user_granularity"].max()+1 - self.conf.test_granularity_count
+				start=0
 				end=df["user_granularity"].max()+1
 			for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
 				print(t)
@@ -111,8 +126,8 @@ class DataHelper():
 	
 			# print( np.array(batch_item_seqs).shape)
 			# print( np.array(batch_user_seqs).shape)
-			pickle.dump(samples, open("samples.pkl", 'wb'),protocol=2)
-		
+			pickle.dump(samples, open(samples_pickle_file, 'wb'),protocol=2)
+
 		if flag=="train" and shuffle:
 			samples = np.random.permutation(samples)
 		print(len(samples))
@@ -129,33 +144,12 @@ class DataHelper():
 		ratings=[pair[2] for pair in batch]
 		yield u_seqs,i_seqs,ratings
 
-				
-
-
-
-def getTestFlag():
-	import tensorflow as tf
-	flags = tf.app.flags
-	flags.DEFINE_string("dataset", "moviesLen-100k", "Comma-separated list of hostname:port pairs")
-	flags.DEFINE_string("test_file_name", "ua.test", "Comma-separated list of hostname:port pairs")
-	flags.DEFINE_string("train_file_name", "ua.base", "Comma-separated list of hostname:port pairs")
-
-	flags.DEFINE_integer("batch_size", 32, "Batch size of data while training")
-	flags.DEFINE_integer("user_delta", 7, "Batch size of data while training")
-	flags.DEFINE_integer("item_delta", 7, "Batch size of data while training")  # TODO :  user_delta could not equals to item_delta
-	flags.DEFINE_integer("item_windows_size", 10, "Batch size of data while training")
-	flags.DEFINE_integer("user_windows_size", 10, "Batch size of data while training")
-	
-	flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
-
-	# FLAGS = flags.FLAGS
-	# # FLAGS.workernum=4
-	return flags.FLAGS
-
 def main():
 
-	FLAGS=getTestFlag()
+	FLAGS=config.getTestFlag()
 	helper=DataHelper(FLAGS)
+	# print(train[train.user_granularity==train.user_granularity.max()-2] )  
+
 	print (helper.u_cnt)
 	print (helper.i_cnt)
 	i=0
@@ -165,7 +159,6 @@ def main():
 		# print(np.array(z).shape)
 		print(i)
 		i+=1
-
-
-if __name__=="__main__":
+	i=0
+if __name__ == '__main__':
 	main()

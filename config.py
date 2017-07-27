@@ -3,7 +3,7 @@ def getTestFlag():
 	import tensorflow as tf
 	flags = tf.app.flags
 	flags.DEFINE_string("dataset", "moviesLen-100k", "Comma-separated list of hostname:port pairs")
-	flags.DEFINE_string("test_file_name", "ua.test", "Comma-separated list of hostname:port pairs")
+	# flags.DEFINE_string("test_file_name", "ua.test", "Comma-separated list of hostname:port pairs")
 	flags.DEFINE_string("train_file_name", "ratings.csv", "Comma-separated list of hostname:port pairs")
 
 	flags.DEFINE_integer("batch_size", 32, "Batch size of data while training")
@@ -16,6 +16,9 @@ def getTestFlag():
 	
 	flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
 
+	train_split_data={"moviesLen-100k": "1998-04-05" , "netflix-6-mouth": "2005-12-01" }
+	flags.FLAGS.split_data=train_split_data[flags.FLAGS.dataset]
+	# flags.DEFINE_string("split_data", "ratings.csv", "Comma-separated list of hostname:port pairs")
 	# FLAGS = flags.FLAGS
 	# # FLAGS.workernum=4
 	return flags.FLAGS
