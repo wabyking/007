@@ -1,5 +1,5 @@
 import pandas as pd 
-import os
+import os,math
 import datetime
 import numpy as np 
 import pickle
@@ -143,22 +143,72 @@ class DataHelper():
 		i_seqs= [[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch]
 		ratings=[pair[2] for pair in batch]
 		yield u_seqs,i_seqs,ratings
+	def getBatch4MF(self,flag="train",shuffle=True):
+		np.random.seed(0)
+		train_flag= np.random.random(len(self.train))>0.2
+		if flag=="train":
+			df=self.train[train_flag]
+			if shuffle ==True:
+				df=df.iloc[np.random.permutation(len(df))]
+		else:
+			df=self.train[~train_flag]
+
+		n_batches= int(len(df)/ self.conf.batch_size)
+		for i in range(0,n_batches):
+			batch = df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+			yield batch["uid"],batch["itemid"],batch["rating"]
+		batch= df[-1*self.conf.batch_size:] 
+		yield batch["uid"],batch["itemid"],batch["rating"]
+
+
+	def getBatch4MF_fineTune(self,flag="train",shuffle=True):
+		np.random.seed(0)
+		train_flag= np.random.random(len(self.train))>0.2
+		if flag=="train":
+			df=self.train[train_flag]
+			if shuffle ==True:
+				df=df.iloc[np.random.permutation(len(df))]
+		else:
+			df=self.train[~train_flag]
+		samples=pd.DataFrame()
+		for i in range(1,6):
+			samples=pd.concat([samples, df[df.rating==i].reset_index()[:4800]])
+		df=samples
+		n_batches= int(len(df)/ self.conf.batch_size)
+		for i in range(0,n_batches):
+			batch = df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+			yield batch["uid"],batch["itemid"],batch["rating"]
+		batch= df[-1*self.conf.batch_size:] 
+
+	def testModel(self,sess,discriminator,flag="train"):
+		results=np.array([])
+		for uid,itemid,rating in self.getBatch4MF(flag=flag):
+		    feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
+		    predicted = sess.run(discriminator.pre_logits,feed_dict=feed_dict)
+		    error=(np.array(predicted)-np.array(rating))
+		    se= np.square(error)
+		    results=np.append(results,se)
+		# print (sess.run(discriminator.user_bias)[:10])
+		mse=np.mean(results)
+		return math.sqrt(mse)
+		
 
 def main():
 
 	FLAGS=config.getTestFlag()
 	helper=DataHelper(FLAGS)
 	# print(train[train.user_granularity==train.user_granularity.max()-2] )  
+	print ((helper.train.groupby("rating").count()) / len(helper.train) )
 
 	print (helper.u_cnt)
 	print (helper.i_cnt)
 	i=0
-	for x,y,z in helper.getBatch():
+	for x,y,z in helper.getBatch4MF_fineTune():
 		# print(np.array(x).shape)
 		# print(np.array(y).shape)
 		# print(np.array(z).shape)
 		print(i)
 		i+=1
-	i=0
+
 if __name__ == '__main__':
 	main()

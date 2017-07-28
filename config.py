@@ -13,6 +13,10 @@ def getTestFlag():
 	flags.DEFINE_integer("user_windows_size", 10, "Batch size of data while training")
 	flags.DEFINE_integer("n_epochs", 10, "Batch size of data while training")
 	flags.DEFINE_integer("test_granularity_count", 2, "Batch size of data while training")
+	flags.DEFINE_integer("mf_embedding_dim", 100, "Batch size of data while training")
+	flags.DEFINE_float("learning_rate", 0.1, "Batch size of data while training")
+	flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
+	flags.DEFINE_float("momentum", 1, "Batch size of data while training")
 	
 	flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
 
