@@ -1,10 +1,12 @@
 import tensorflow as tf
 import pickle as cPickle
 import numpy as np
-import config as conf
+
 from dataHelper import DataHelper
 import math
-FLAGS=conf.getTestFlag()
+from config import Singleton
+flagFactory=Singleton()
+FLAGS=flagFactory.getInstance()
 helper=DataHelper(FLAGS)
 
 
@@ -113,7 +115,7 @@ class DIS():
         # self.all_rating = tf.matmul(self.u_embedding, self.item_embeddings, transpose_a=False,
         #                             transpose_b=True) + self.item_bias
 
-        # self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias
+        self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
         # self.NLL = -tf.reduce_mean(tf.log(
         #     tf.gather(tf.reshape(tf.nn.softmax(tf.reshape(self.all_logits, [1, -1])), [-1]), self.i))
         # )
@@ -155,11 +157,15 @@ def createModel( checkpoint_dir="model/"):
 
             if best_score> test_performance:
 
-                saver.save(sess, checkpoint_dir + 'model.ckpt', global_step=i+1) 
+                saver.save(sess, checkpoint_dir + 'model.ckpt') 
                 best_score=test_performance
 
 
+
+
+
 def testModel(checkpoint_dir="model/"):
+
 
 
     with tf.Session(config=config) as sess:
@@ -168,11 +174,28 @@ def testModel(checkpoint_dir="model/"):
         if ckpt and ckpt.model_checkpoint_path:  
             saver.restore(sess, ckpt.model_checkpoint_path)  
 
+        
+        model_exporter = tf.contrib.session_bundle.exporter.Exporter(saver)
+        model_exporter.init(
+            sess.graph.as_graph_def(),
+            named_graph_signatures={
+                'inputs': tf.contrib.session_bundle.exporter.generic_signature({'uid': discriminator.u, "itemid":discriminator.i}),
+                'outputs': tf.contrib.session_bundle.exporter.generic_signature({'rating': discriminator.label})})
+        model_exporter.export(FLAGS.work_dir,         
+                              tf.constant(FLAGS.export_version),
+                              sess)
+
         print ("rmse = %.6f" % helper.testModel(sess,discriminator,flag="test"))
 
 
-def main():
+def main(): 
     createModel()
     testModel()
+
 if __name__ == '__main__':
     main()
+  
+
+  
+
+     

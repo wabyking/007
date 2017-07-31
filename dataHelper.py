@@ -11,16 +11,18 @@ class DataHelper():
 		self.train = self.loadData("train")
 
 		# self.test = self.loadData("test")
+
 		self.u_cnt= self.train["uid"].max()+1
 		self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
-
+		print(self.u_cnt)
+		print(self.i_cnt)
 	def create_dirs(dirname):
 		if not os.path.exists(dirname):
 			os.makedirs(dirname)
 
 	@log_time_delta
 	def loadData(self, data_type='train'):
-		data_dir="data\\"+self.conf.dataset
+		data_dir="data/"+self.conf.dataset
 		if data_type=="train":
 			filename = os.path.join(data_dir, self.conf.train_file_name)
 		
@@ -29,8 +31,15 @@ class DataHelper():
 		else:
 			print("no such data type")
 			exit(0)
+		if self.conf.dataset=="e":
+			
+			df=pd.read_csv(filename,sep=" ", names=["uid","itemid","rating","timestamp"])
+			print(df)
+			df=df[(df.itemid>1) & (df.itemid<34)]
+			return df
 		df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
-
+		
+		
 		if self.conf.dataset == "moviesLen-100k":
 			stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
 			df["date"]= df["timestamp"].apply(stamp2date)
