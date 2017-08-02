@@ -8,76 +8,32 @@ from tools import log_time_delta
 import time
 from multiprocessing import Pool
 from multiprocessing import cpu_count
+from scipy.sparse import csr_matrix,csr_matrix
+import math
+from config import Singleton
+import sklearn
 
 class DataHelper():
     def __init__(self,conf,mode="run"):
         self.conf=conf
-        self.dataset_pkl = "tmp/"+self.conf.dataset+".pkl"        
-        self.train_pkl = "tmp/samples_"+self.conf.dataset+"_train.pkl"
-        self.test_pkl = "tmp/samples_"+self.conf.dataset+"_test.pkl"
-        self.dict_pkl = "tmp/user_item_"+self.conf.dataset+".pkl"
-        self.pool=Pool(cpu_count())
-        if mode != "run":            
-            
-            if os.path.exists(self.dataset_pkl):
-                self.train = pickle.load(open(self.dataset_pkl, 'rb'))
-            else:
-                self.train = self.loadData()            
-            
-            self.u_cnt= self.train["uid"].max()+1
-            self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
-            
-            print( "The number of users: %d" % self.u_cnt)
-            print( "The number of items: %d" % self.i_cnt)
-
-            self.df= self.train.copy()
-                    
-            if os.path.exists(self.dict_pkl):
-                self.user_dict,self.item_dict= pickle.load(open(self.dict_pkl, 'rb'))
-            else:            
-                self.user_dict,self.item_dict={},{}
-                user_windows = self.df.groupby("uid").apply(self.user_windows_apply,user_dict=self.user_dict)
-                item_windows = self.df.groupby("itemid").apply(self.item_windows_apply,item_dict=self.item_dict)
-                pickle.dump([self.user_dict,self.item_dict], open(self.dict_pkl, 'wb'),protocol=2)
-            
-            print( "The number of user dict: %d" % len(self.user_dict))
-            print( "The number of item dict: %d" % len(self.item_dict))
-            
-            if os.path.exists(self.train_pkl):
-                self.trainset = pickle.load(open(self.train_pkl, 'rb'))
-                self.testset = pickle.load(open(self.test_pkl, 'rb'))            
-            else:
-                self.testset = self.generateSamples(mode="test")
-                self.trainset = self.generateSamples(mode="train")
-        else:
-            self.train = pickle.load(open(self.dataset_pkl, 'rb'))
-            self.trainset = pickle.load(open(self.train_pkl, 'rb'))
-            self.testset = pickle.load(open(self.test_pkl, 'rb'))                        
-            self.u_cnt= self.train["uid"].max()+1
-            self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
-            
-        n_examples_train = len(self.trainset)
-        n_examples_test = len(self.testset)
-        n_train_batch= int(len(self.trainset)/ self.conf.batch_size)
-        n_test_batch= int(len(self.testset)/ self.conf.batch_size)
-        print( "The number of epoch: %d" %self.conf.n_epochs)
-        print( "Train data size: %d" % n_examples_train)
-        print( "Test data size: %d" % n_examples_test)
-        print( "Batch size: %d" % self.conf.batch_size)
-        print( "Iterations per epoch in train data: %d" % n_train_batch)        
-        print( "Iterations in test data: %d" % n_test_batch)
+        self.data = self.loadData()
+        self.u_cnt= self.data ["uid"].max()+1
+        self.i_cnt= self.data ["itemid"].max()+1                    
         
-        np.random.seed(1)
-        ind = np.random.permutation(len(self.trainset))  
-        self.trainset = [self.trainset[i] for i in ind]    
+        # print( "The number of users: %d" % self.u_cnt)
+        # print( "The number of items: %d" % self.i_cnt) 
+        print ("..")      
             
-    def create_dirs(dirname):
+    def create_dirs(self,dirname):
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
     @log_time_delta
     def loadData(self):
-        data_dir="data/"+self.conf.dataset
+        dataset_pkl = "tmp/"+self.conf.dataset +".pkl"
+        if os.path.exists(dataset_pkl):
+            return pickle.load(open(dataset_pkl, 'rb'))
+        data_dir="data/%s"% self.conf.dataset 
         filename = os.path.join(data_dir, self.conf.train_file_name)
        
         df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
@@ -102,9 +58,11 @@ class DataHelper():
         
         if self.conf.threshold > 0:        
             counts_df = pd.DataFrame(df.groupby('uid').size().rename('counts'))
+
             users = set(counts_df[counts_df.counts>self.conf.threshold].index)
+
             df = df[df.uid.isin(users)]
-        
+
         
         df['u_original'] = df['uid'].astype('category')
         df['i_original'] = df['itemid'].astype('category')
@@ -112,8 +70,8 @@ class DataHelper():
         df['itemid'] = df['i_original'].cat.codes
         df = df.drop('u_original', 1)
         df = df.drop('i_original', 1)
-
-        pickle.dump(df, open(self.dataset_pkl, 'wb'),protocol=2)
+        
+        pickle.dump(df, open(dataset_pkl, 'wb'),protocol=2)
         return df
 
     def user_windows_apply(self,group,user_dict):
@@ -133,92 +91,234 @@ class DataHelper():
             item_dict[itemid][item_granularity]= group[group.item_granularity==item_granularity][["uid","rating"]]
             # print (item_dict[itemid][item_granularity])
         return len(group["item_granularity"].unique())
-
-
-
-        
-    def generateSamples(self, mode="train"):
-        
-        df = self.df
-        samples=[]
-        if mode=="train":
-            start=df["user_granularity"].min()+self.conf.user_windows_size
-            end=0
-        else:
-            start=0
-            end=df["user_granularity"].max()+1
-        for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
-            print(t)
-            for index,row in df[df.user_granularity==t].iterrows():
-                userid =row["uid"]
-                itemid =row["itemid"]
-                rating =row["rating"] # get the r_ijt
-                item_seqs,user_seqs=[],[]
-                for pre_t in range(t-self.conf.user_windows_size ,t):    
-                    user_seqs.append(self.user_dict[userid].get(pre_t,None))
-                    item_seqs.append(self.item_dict[itemid].get(pre_t,None))
-                
-                if mode=="train":                
-                    null_user_seqs = len([e for e in user_seqs if e is None])
-                    if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
-                        samples.append((user_seqs,item_seqs,rating))    
-                else:
-                    samples.append((user_seqs,item_seqs,rating))    
-                    
-        if mode == "train":
-            pickle.dump(samples, open(self.train_pkl, 'wb'),protocol=2)
-        else:
-            pickle.dump(samples, open(self.test_pkl, 'wb'),protocol=2)
-        return samples
-    
           
-    def getBatch(self,mode="train"):        
-        if mode == "train":
-            samples = self.trainset
+    def getBatch_prepare(self,pool,mode="train", epoches_size=1,shuffle=True):  
+        pickle_name = "tmp/samples_"+self.conf.dataset+"_"+mode+".pkl"
+        if os.path.exists(pickle_name):
+            print ("load %s over"% pickle_name )
+            u_seqss,i_seqss,ratingss=pickle.load(open(pickle_name, 'rb'))
+            return u_seqss,i_seqss,ratingss
         else:
-            samples = self.testset
+            dict_pkl = "tmp/user_item_"+self.conf.dataset+".pkl"
+
+            if os.path.exists(dict_pkl):
+                user_dict,item_dict= pickle.load(open(dict_pkl, 'rb'))
+            else:            
+                user_dict,item_dict={},{}
+                user_windows = self.data.groupby("uid").apply(self.user_windows_apply,user_dict=user_dict)
+                item_windows = self.data.groupby("itemid").apply(self.item_windows_apply,item_dict=item_dict)
+                pickle.dump([user_dict,item_dict], open(dict_pkl, 'wb'),protocol=2)
+            print ("dict load over")
+            
+            df = self.data
+            samples=[]
+            if mode=="train":
+                start=df["user_granularity"].min()+self.conf.user_windows_size
+                end=0
+            else:
+                start=0
+                end=df["user_granularity"].max()+1
+            for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
+                print(t)
+                for index,row in df[df.user_granularity==t].iterrows():
+                    userid =row["uid"]
+                    itemid =row["itemid"]
+                    rating =row["rating"] # get the r_ijt
+                    item_seqs,user_seqs=[],[]
+                    for pre_t in range(t-self.conf.user_windows_size ,t):    
+                        user_seqs.append(user_dict[userid].get(pre_t,None))
+                        item_seqs.append(item_dict[itemid].get(pre_t,None))
+                    
+                    if mode=="train": #if :                
+                        null_user_seqs = len([e for e in user_seqs if e is None])
+                        if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
+                            samples.append((user_seqs,item_seqs,rating))    
+                    else:
+                        samples.append((user_seqs,item_seqs,rating))          
+            
+        u_seqss, i_seqss, ratingss=[],[],[]         
+        start=time.time()
+        
+        print("shuffle time spent %f"% (time.time()-start))
         n_batches= int(len(samples)/ self.conf.batch_size)
+        print("%d batch"% n_batches)
+
+                
         for i in range(0,n_batches):
+            start=time.time()
+
             batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
             #u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
             #i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
-            u_seqs= self.pool.map(self.getUserVector,[ pairs[0] for pairs in batch])
-            i_seqs= self.pool.map(self.getItemVector,[pairs[1] for pairs in batch])
-            ratings=np.array([pair[2] for pair in batch])
+            u_seqs= pool.map(getUserVector1,[pairs[0] for pairs in batch])
+            i_seqs= pool.map(getItemVector1,[pairs[1] for pairs in batch])
+
+            ratings=[pair[2] for pair in batch]
+            u_seqss.extend(u_seqs)
+            i_seqss.extend(i_seqs)
+            ratingss.extend(ratings)
+            
+            # if i %10==0:
+            #     print("processed %d lines"%i)
+            # print("spent %f"% (time.time()-start))
+        pickle.dump([u_seqss,i_seqss,ratingss], open(pickle_name, 'wb'),protocol=2)
+        return u_seqss,i_seqss,ratingss
+        
+        # if mode=="train" and shuffle:
+        #     u_seqss,i_seqss,ratings = sklearn.utils.shuffle(zip(u_seqss,i_seqss,ratings))
+
+        # n_batches= int(len(df)/ self.conf.batch_size)
+        # for i in range(0,n_batches):
+        #     batch = df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+        #     yield batch["uid"],batch["itemid"],batch["rating"]
+        # batch= df[-1*self.conf.batch_size:] 
+        # yield batch["uid"],batch["itemid"],batch["rating"]
+
+
+        # pickle.dump([u_seqss,i_seqss,ratings], open(pickle_name, 'wb'),protocol=2) 
+
+    def getUserVector(self,user_sets):
+       u_seqs=[]
+       for user_set in user_sets:
+           u_seq=[0]*(i_cnt)
+       
+           if not user_set is None:
+               for index,row in user_set.iterrows():
+                   u_seq[row["itemid"]]=row["rating"]
+           u_seqs.append(u_seq)
+       return np.array(u_seqs)
+    
+    
+    def getItemVector(self,item_sets):
+       i_seqs=[]
+       for item_set in item_sets:
+           i_seq=[0]*(u_cnt)
+           if not item_set is None:
+               for index,row in item_set.iterrows():
+                   i_seq[row["uid"]]=row["rating"]
+           i_seqs.append(i_seq)
+       return np.array(i_seqs)
+    def getBatch4MF(self,flag="train",shuffle=True):
+        np.random.seed(0)
+        train_flag= np.random.random(len(self.data))>0.2
+        if flag=="train":
+            df=self.data[train_flag]
+            if shuffle ==True:
+                df=df.iloc[np.random.permutation(len(df))]
+                print ("shuffle over")
+        else:
+            df=self.data[~train_flag]
+
+        n_batches= int(len(df)/ self.conf.batch_size)
+        for i in range(0,n_batches):
+            batch = df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+            yield batch["uid"],batch["itemid"],batch["rating"]
+        batch= df[-1*self.conf.batch_size:] 
+        yield batch["uid"],batch["itemid"],batch["rating"]
+
+    def testModel(self,sess,discriminator,flag="test"):
+        results=np.array([])
+        for uid,itemid,rating in self.getBatch4MF(flag=flag):
+            feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
+            predicted = sess.run(discriminator.pre_logits,feed_dict=feed_dict)
+            error=(np.array(predicted)-np.array(rating))
+            se= np.square(error)
+            results=np.append(results,se)
+        # print (sess.run(discriminator.user_bias)[:10])
+        mse=np.mean(results)
+        return math.sqrt(mse)
+    
+    def prepare(self,shuffle=True,mode="train"):
+        i=0
+        pool=Pool(cpu_count())
+        u_seqss,i_seqss,ratingss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
+        batches=[(x,y,z) for x,y,z in zip(u_seqss,i_seqss,ratingss)]
+        if mode=="train" and shuffle:      
+            batches =sklearn.utils.shuffle(batches)
+
+        n_batches= int(len(batches)/ self.conf.batch_size)
+        for i in range(0,n_batches):
+            batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+            u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
+            i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
+            ratings=[ii[2] for ii in batch]
             yield u_seqs,i_seqs,ratings
-#        batch= samples[-1*self.conf.batch_size:]
-#        u_seqs= [[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch]
-#        i_seqs= [[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch]
-#        ratings=[pair[2] for pair in batch]
-#        yield u_seqs,i_seqs,ratings
-#    def getBatch1(self,mode="train"):        
-#        if mode == "train":
-#            samples = self.trainset
-#        else:
-#            samples = self.testset
-#        n_batches= int(len(samples)/ self.conf.batch_size)
-#        for i in range(0,n_batches):
-#            batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
-#            u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
-#            i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
-#            #u_seqs= self.pool.map(self.getUserVector,[ pairs[0] for pairs in batch])
-#            #i_seqs= self.pool.map(self.getItemVector,[pairs[1] for pairs in batch])
-#            ratings=np.array([pair[2] for pair in batch])
-#            yield u_seqs,i_seqs,ratings
-#        batch= samples[-1*self.conf.batch_size:]
-#        u_seqs= [[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch]
-#        i_seqs= [[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch]
-#        ratings=[pair[2] for pair in batch]
-#        yield u_seqs,i_seqs,ratings
-#    def __getstate__(self):
-#        self_dict = self.__dict__.copy()
-#        del self_dict['pool']
-#        return self_dict
+
+
+def sparse2dense(sparse):
+    return sparse.toarray()
+
+
+
+flagFactory=Singleton()
+FLAGS=flagFactory.getInstance()
+helper=DataHelper(FLAGS)
+
+def getItemVector1(item_sets):
+    rows=[]
+    cols=[]
+    datas=[]
+    for index_i,item_set in enumerate(item_sets):
+        if not item_set is None:
+            for index_j,row in item_set.iterrows():
+                rows.append(index_i)
+                cols.append(row["uid"])
+                datas.append(row["rating"])
+    result=csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.u_cnt))
+    return result
+
+def getUserVector1(user_sets):
+    rows=[]
+    cols=[]
+    datas=[]
+    for index_i,user_set in enumerate(user_sets):           
+        if not user_set is None:
+            for index,row in user_set.iterrows():
+                rows.append(index_i)
+                cols.append(row["itemid"])
+                datas.append(row["rating"])
+    return csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.i_cnt))
+
+
+
+def main():
+
+    start_t = time.time() 
+    start_t = time.time() 
+    i = 0
+
+    pool=Pool(cpu_count())
+    for x,y,z in helper.getBatch(pool,mode="train", epoches_size=1):                   
+        print(x[0].toarray().shape)
+        print(y[0].toarray().shape)
+        print(np.array(z).shape)
+        print( "Elapsed time: ", time.time() - start_t)
+        outPickle="batches/train/%d"%i
+        pickle.dump((x,y,z), open(outPickle, 'wb'),protocol=2)
+        start_t = time.time()     
+        i+=1   
+
+
+        
+if __name__ == '__main__':
+    for x,y,z in helper.prepare():
+        print(np.array(x).shape)
+
+
+#df= helper.train.copy()    
 #
-#    def __setstate__(self, state):
-#        self.__dict__.update(state)
+#df['u_original'] = df['uid'].astype('category')
+#df['i_original'] = df['itemid'].astype('category')
+#df['uid'] = df['u_original'].cat.codes
+#df['itemid'] = df['i_original'].cat.codes
+#df = df.drop('u_original', 1)
+#df = df.drop('i_original', 1)
+#
+#counts_df = pd.DataFrame(df.groupby('uid').size().rename('counts'))
+#users = set(counts_df[counts_df.counts>100].index)
+#df = df[df.uid.isin(users)]
 
-
+    
 
 #def getUserVector(user_sets):
 #    u_seqs=[]
@@ -243,49 +343,49 @@ class DataHelper():
 #    return np.array(i_seqs)
 
 
-from scipy.sparse import csr_matrix,csr_matrix
+# from scipy.sparse import csr_matrix,csr_matrix
 
-FLAGS=config.getTestFlag()
-start_t = time.time() 
-helper=DataHelper(FLAGS,mode="run")
-print( "Elapsed time: ", time.time() - start_t)
-windows_size=helper.conf.user_windows_size
-u_cnt = helper.u_cnt
-u_cnt = helper.u_cnt
-batch_size=helper.conf.batch_size
-i_cnt = helper.i_cnt
-pool=Pool(cpu_count())
-
-def getItemVector1(item_sets):
-    rows=[]
-    cols=[]
-    datas=[]
-    for index_i,item_set in enumerate(item_sets):
-        if not item_set is None:
-            for index_j,row in item_set.iterrows():
-                rows.append(index_i)
-                cols.append(row["uid"])
-                datas.append(row["rating"])
-    result=csr_matrix((datas, (rows, cols)), shape=(windows_size, u_cnt))
-    return result
-
-def getUserVector1(user_sets):
-    rows=[]
-    cols=[]
-    datas=[]
-    for index_i,user_set in enumerate(user_sets):           
-        if not user_set is None:
-            for index,row in user_set.iterrows():
-                rows.append(index_i)
-                cols.append(row["itemid"])
-                datas.append(row["rating"])
-
-    return csr_matrix((datas, (rows, cols)), shape=(windows_size, i_cnt))
+# FLAGS=config.getTestFlag()
+# start_t = time.time() 
+# helper=DataHelper(FLAGS,mode="run")
+# print( "Elapsed time: ", time.time() - start_t)
+# windows_size=helper.conf.user_windows_size
+# u_cnt = helper.u_cnt
+# u_cnt = helper.u_cnt
+# batch_size=helper.conf.batch_size
+# i_cnt = helper.i_cnt
 
 
-def haddlePair(batch,pool=pool):     
-     u_seqs= pool.map(getUserVector1,[pairs[0] for pairs in batch])
-     i_seqs= pool.map(getItemVector1,[pairs[1] for pairs in batch])
+# def getItemVector1(item_sets):
+#     rows=[]
+#     cols=[]
+#     datas=[]
+#     for index_i,item_set in enumerate(item_sets):
+#         if not item_set is None:
+#             for index_j,row in item_set.iterrows():
+#                 rows.append(index_i)
+#                 cols.append(row["uid"])
+#                 datas.append(row["rating"])
+#     result=csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.u_cnt))
+#     return result
+
+# def getUserVector1(user_sets,helper):
+#     rows=[]
+#     cols=[]
+#     datas=[]
+#     for index_i,user_set in enumerate(user_sets):           
+#         if not user_set is None:
+#             for index,row in user_set.iterrows():
+#                 rows.append(index_i)
+#                 cols.append(row["itemid"])
+#                 datas.append(row["rating"])
+
+#     return csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.i_cnt))
+
+
+def haddlePair(batch,pool):     
+     u_seqs= pool.map(getUserVector1,([pairs[0] for pairs in batch],helper))
+     i_seqs= pool.map(getItemVector1,([pairs[1] for pairs in batch],helper))
      ratings=np.array([pair[2] for pair in batch])
      return u_seqs,i_seqs,ratings
  
@@ -325,70 +425,103 @@ def haddlePair(batch,pool=pool):
 #    print ("for loop %f"%(time.time()-start) )
 #    i_seqs=csr_matrix((data, (index_i,index_k)), shape=(batch_size*windows_size, u_cnt)).toarray()
 #    return u_seqs,i_seqs,[pair[2] for pair in batch] 
-       
-def getBatch(mode="train"):        
-    if mode == "train":
-        samples = helper.trainset
-    else:
-        samples = helper.testset    
-    n_batches= int(len(samples)/ helper.conf.batch_size)
-    for i in range(0,n_batches):
-        batch = samples[i*helper.conf.batch_size:(i+1) * helper.conf.batch_size]
-        u_seqs,i_seqs,ratings = haddlePair(batch,pool)
-        yield u_seqs,i_seqs,ratings 
+# def getBatch(pool,mode="train"):        
+#     if mode == "train":
+#         samples = helper.trainset
+#     else:
+#         samples = helper.testset    
+#     n_batches= int(len(samples)/ helper.conf.batch_size)
+#     for i in range(0,5):
+#         batch = samples[i*helper.conf.batch_size:(i+1) * helper.conf.batch_size]
+#         u_seqs,i_seqs,ratings = haddlePair(batch,pool)
+#         yield u_seqs,i_seqs,ratings 
         
-def main():
+# def main1():
 
     
-    pool=Pool(cpu_count())
-    start_t = time.time() 
-    i = 0
-    for x,y,z in getBatch(mode="train"):                   
-        #print(x[0].toarray().shape)
-        #print(y[0].toarray().shape)
-        #print(np.array(z).shape)
-        print( "Elapsed time: ", time.time() - start_t)
-        outPickle="batches/train/%d"%i
-        pickle.dump((x,y,z), open(outPickle, 'wb'),protocol=2)
-        start_t = time.time()     
-        i+=1        
+#     pool=Pool(cpu_count())
+#     start_t = time.time() 
+#     i = 0
+#     for x,y,z in getBatch(pool,mode="train"):                   
+#         #print(x[0].toarray().shape)
+#         #print(y[0].toarray().shape)
+#         #print(np.array(z).shape)
+#         print( "Elapsed time: ", time.time() - start_t)
+#         outPickle="batches/train/%d"%i
+#         pickle.dump((x,y,z), open(outPickle, 'wb'),protocol=2)
+#         start_t = time.time()     
+#         i+=1        
     
-    start_t = time.time() 
-    i = 0
-    for x,y,z in getBatch(mode="test"):                   
-        #print(x[0].toarray().shape)
-        #print(y[0].toarray().shape)
-        #print(np.array(z).shape)
-        print( "Elapsed time: ", time.time() - start_t)
-        outPickle="batches/test/%d"%i
-        pickle.dump((x,y,z), open(outPickle, 'wb'),protocol=2)
-        start_t = time.time()   
-        i+=1
-    
+#     start_t = time.time() 
+#     i = 0
+#     for x,y,z in getBatch(pool,mode="test"):                   
+#         #print(x[0].toarray().shape)
+#         #print(y[0].toarray().shape)
+#         #print(np.array(z).shape)
+#         print( "Elapsed time: ", time.time() - start_t)
+#         outPickle="batches/test/%d"%i
+#         pickle.dump((x,y,z), open(outPickle, 'wb'),protocol=2)
+#         start_t = time.time()   
+#         i+=1
+#     exit()
         
-    for i in range(10):
-        start_t = time.time()
-        x,y,z = pickle.load(open("batches/train/%d"%i, 'rb'))
-        xx= [item.toarray() for item in x]
-        yy= [item.toarray() for item in y]        
-        print( "Elapsed time: ", time.time() - start_t)
+#     for i in range(10):
+#         start_t = time.time()
+#         x,y,z = pickle.load(open("batches/train/%d"%i, 'rb'))
+#         xx= [item.toarray() for item in x]
+#         yy= [item.toarray() for item in y]        
+#         print( "Elapsed time: ", time.time() - start_t)
+
+
+# def sqrt(x):
+#     print(x)
+
+# self.u_cnt= self.data["uid"].max()+1
+# self.i_cnt= self.data["itemid"].max()+1   
+         
+
+# self.u_cnt= self.data["uid"].max()+1
+# self.i_cnt= self.data["itemid"].max()+1   # index starts with one instead of zero
+
+# print( "The number of users: %d" % self.u_cnt)
+# print( "The number of items: %d" % self.i_cnt)
+ # self.df= self.data.copy()
+                
+        # if os.path.exists(self.dict_pkl):
+        #     self.user_dict,self.item_dict= pickle.load(open(self.dict_pkl, 'rb'))
+        # else:            
+        #     self.user_dict,self.item_dict={},{}
+        #     user_windows = self.df.groupby("uid").apply(self.user_windows_apply,user_dict=self.user_dict)
+        #     item_windows = self.df.groupby("itemid").apply(self.item_windows_apply,item_dict=self.item_dict)
+        #     pickle.dump([self.user_dict,self.item_dict], open(self.dict_pkl, 'wb'),protocol=2)
         
-if __name__ == '__main__':
-    main()
-
-
-#df= helper.train.copy()    
-#
-#df['u_original'] = df['uid'].astype('category')
-#df['i_original'] = df['itemid'].astype('category')
-#df['uid'] = df['u_original'].cat.codes
-#df['itemid'] = df['i_original'].cat.codes
-#df = df.drop('u_original', 1)
-#df = df.drop('i_original', 1)
-#
-#counts_df = pd.DataFrame(df.groupby('uid').size().rename('counts'))
-#users = set(counts_df[counts_df.counts>100].index)
-#df = df[df.uid.isin(users)]
-
-    
-    
+        # print( "The number of user dict: %d" % len(self.user_dict))
+        # print( "The number of item dict: %d" % len(self.item_dict))
+        
+        # if os.path.exists(self.train_pkl):
+        #     self.trainset = pickle.load(open(self.train_pkl, 'rb'))
+        #     self.testset = pickle.load(open(self.test_pkl, 'rb'))            
+        # else:
+        #     self.testset = self.generateSamples(mode="test")
+        #     self.trainset = self.generateSamples(mode="train")
+        # # else:
+        # #     self.train = pickle.load(open(self.dataset_pkl, 'rb'))
+        # #     self.trainset = pickle.load(open(self.train_pkl, 'rb'))
+        # #     self.testset = pickle.load(open(self.test_pkl, 'rb'))                        
+        # self.u_cnt= self.train["uid"].max()+1
+        # self.i_cnt= self.train["itemid"].max()+1   # index starts with one instead of zero
+            
+        # n_examples_train = len(self.trainset)
+        # n_examples_test = len(self.testset)
+        # n_train_batch= int(len(self.trainset)/ self.conf.batch_size)
+        # n_test_batch= int(len(self.testset)/ self.conf.batch_size)
+        # print( "The number of epoch: %d" %self.conf.n_epochs)
+        # print( "Train data size: %d" % n_examples_train)
+        # print( "Test data size: %d" % n_examples_test)
+        # print( "Batch size: %d" % self.conf.batch_size)
+        # print( "Iterations per epoch in train data: %d" % n_train_batch)        
+        # print( "Iterations in test data: %d" % n_test_batch)
+        
+        # np.random.seed(1)
+        # ind = np.random.permutation(len(self.trainset))  
+        # self.trainset = [self.trainset[i] for i in ind]    
