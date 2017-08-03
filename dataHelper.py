@@ -255,7 +255,7 @@ class DataHelper():
     def testModel(self,sess,discriminator,flag="test"):
         results=np.array([])
         for uid,itemid,rating in self.getBatch4MF(flag=flag):
-            feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
+            feed_dict={discriminator.u: uid, discriminator.i: itemid}
             predicted = sess.run(discriminator.pre_logits,feed_dict=feed_dict)
             error=(np.array(predicted)-np.array(rating))
             se= np.square(error)
@@ -292,6 +292,12 @@ class DataHelper():
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
+    def getBatchUser(self,users):
+        n_batches= int(len(df)/ self.conf.batch_size)
+        for i in range(0,n_batches):
+            yield df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]             
+        yield batch[-1*(n_batches% self.conf.batch_size):]
+
     def evaluate(self,sess,model):
         users=set(self.data["uid"].unique())
         items=set(self.data["itemid"].unique())
@@ -299,13 +305,27 @@ class DataHelper():
         pos_items=self.train.groupby("uid").apply(get_pos_items)
         print(pos_items.to_dict())
 
-
-
-
         # print(user_pos[942])
-        for userid in self.data["uid"].unique():
-            candiate_items= items -pos_items.get(userid, set())
-            all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u})
+        users= self.data["uid"].unique().tolist()
+
+
+        # for user_batch in self.getBatchUser():
+        for user_id in users:
+            # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
+            all_rating= np.random.random( len(items)+1)  #[user_id]
+
+            candiate_index = items - pos_items.get(user_id, set())
+            scores =[ (index,all_rating[index]) for index in candiate_index ]
+            sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
+
+            rarank_index= ([ii[0] for ii in sortedScores[:10]])
+            feed_u_seq,feed_i_seq=self.getFeedingData(user_id, rerank_index)
+            # feed_dict={model.u: }
+            scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
+
+            exit() 
+
+
         exit()
         for x,y,z,u,i in helper.prepare(mode=test):
             print(np.array(x).shape)
