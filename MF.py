@@ -3,7 +3,7 @@ import pickle as cPickle
 import numpy as np
 
 from dataHelper import DataHelper
-import math
+import math,os
 from config import Singleton
 flagFactory=Singleton()
 FLAGS=flagFactory.getInstance()
@@ -160,21 +160,14 @@ def createModel( checkpoint_dir="model/"):
                 saver.save(sess, checkpoint_dir + 'model.ckpt') 
                 best_score=test_performance
 
-
-
-
-
 def testModel(checkpoint_dir="model/"):
-
-
-
     with tf.Session(config=config) as sess:
         sess.run(tf.global_variables_initializer())
         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)  
         if ckpt and ckpt.model_checkpoint_path:  
             saver.restore(sess, ckpt.model_checkpoint_path)  
 
-        
+        FLAGS.export_version=15
         model_exporter = tf.contrib.session_bundle.exporter.Exporter(saver)
         model_exporter.init(
             sess.graph.as_graph_def(),
@@ -188,9 +181,38 @@ def testModel(checkpoint_dir="model/"):
         print ("rmse = %.6f" % helper.testModel(sess,discriminator,flag="test"))
 
 
+
+
+def testServing(checkpoint_dir="model/"):
+
+
+
+    model_version="1"
+    path = os.path.join("model", str(model_version))
+    builder = tf.saved_model.builder.SavedModelBuilder(path)
+
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        ckpt = tf.train.get_checkpoint_state(checkpoint_dir)  
+        if ckpt and ckpt.model_checkpoint_path:  
+            saver.restore(sess, ckpt.model_checkpoint_path)
+        print ("rmse = %.6f" % helper.testModel(sess,discriminator,flag="test"))
+
+        builder.add_meta_graph_and_variables(
+            sess,
+            [tf.saved_model.tag_constants.SERVING],
+            signature_def_map= {
+                "magic_model": tf.saved_model.signature_def_utils.predict_signature_def(
+                    inputs= {"uid": discriminator.u, "bacon": discriminator.i},
+                    outputs= {"rating": discriminator.label})
+            })
+        builder.save()
+
+
 def main(): 
     createModel()
-    testModel()
+    # testModel()
+    testServing()
 
 if __name__ == '__main__':
     main()
@@ -199,3 +221,77 @@ if __name__ == '__main__':
   
 
      
+# def testSaver(checkpoint_dir="model/",export_path_base = "serving_model"):
+
+
+#     sess.run(tf.global_variables_initializer())
+#     ckpt = tf.train.get_checkpoint_state(checkpoint_dir)  
+#     if ckpt and ckpt.model_checkpoint_path:  
+#         saver.restore(sess, ckpt.model_checkpoint_path)
+#     print ("rmse = %.6f" % helper.testModel(sess,discriminator,flag="test"))
+
+
+#     from tensorflow.python.saved_model import builder as saved_model_builder
+
+#     export_path = os.path.join(
+#           compat.as_bytes(export_path_base),
+#           compat.as_bytes(str(FLAGS.model_version)))
+#     print ('Exporting trained model to', export_path)
+#     builder = saved_model_builder.SavedModelBuilder(export_path)
+#     builder.add_meta_graph_and_variables(
+#           sess, [tag_constants.SERVING],
+#           signature_def_map={
+#                'predict_images':
+#                    prediction_signature,
+#                signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+#                    classification_signature,
+#           },
+#           legacy_init_op=legacy_init_op)
+#     builder.save()
+
+
+
+#     # Build the signature_def_map.
+#     classification_inputs_user = tf.saved_model.utils.build_tensor_info(discriminator.u)
+#     classification_inputs_item = tf.saved_model.utils.build_tensor_info(discriminator.i)
+#     classification_outputs_scores = tf.saved_model.utils.build_tensor_info(discriminator.label)
+
+
+#     classification_signature = (
+#       tf.saved_model.signature_def_utils.build_signature_def(
+#           inputs={
+#               tf.saved_model.signature_constants.CLASSIFY_INPUTS_USER:
+#                   classification_inputs_user,
+#               tf.saved_model.signature_constants.CLASSIFY_INPUTS_ITEM:
+#                   classification_inputs_item,
+#           },
+#           outputs={
+#               tf.saved_model.signature_constants.CLASSIFY_OUTPUT_SCORES:
+#                   classification_outputs_scores
+#           },
+#           method_name=tf.saved_model.signature_constants.CLASSIFY_METHOD_NAME))
+
+#     tensor_info_u = tf.saved_model.utils.build_tensor_info(discriminator.u)
+#     tensor_info_i = tf.saved_model.utils.build_tensor_info(discriminator.i)
+#     tensor_info_label = tf.saved_model.utils.build_tensor_info(discriminator.label)
+
+#     prediction_signature = (
+#       tf.saved_model.signature_def_utils.build_signature_def(
+#           inputs={'user_id': tensor_info_u,'item_id': tensor_info_i},
+#           outputs={'scores': tensor_info_label},
+#           method_name=tf.saved_model.signature_constants.PREDICT_METHOD_NAME))
+
+#     legacy_init_op = tf.group(tf.tables_initializer(), name='legacy_init_op')
+#     builder.add_meta_graph_and_variables(
+#       sess, [tf.saved_model.tag_constants.SERVING],
+#       signature_def_map={
+#           'predict_images':
+#               prediction_signature,
+#           tf.saved_model.signature_constants.DEFAULT_SERVING_SIGNATURE_DEF_KEY:
+#               classification_signature,
+#       },
+#       legacy_init_op=legacy_init_op)
+
+#     builder.save()
+
+#     print ('Done exporting!')
