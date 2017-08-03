@@ -11,7 +11,7 @@ class Singleton(object):
 		import tensorflow as tf
 		flags = tf.app.flags
 
-		flags.DEFINE_string("dataset", "netflix-6-mouth", "Comma-separated list of hostname:port pairs")
+		flags.DEFINE_string("dataset", "moviesLen-100k", "Comma-separated list of hostname:port pairs")
 		# flags.DEFINE_string("test_file_name", "ua.test", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("train_file_name", "ratings.csv", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("work_dir", "online_model", "Comma-separated list of hostname:port pairs")
