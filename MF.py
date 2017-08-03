@@ -203,8 +203,8 @@ def testServing(checkpoint_dir="model/"):
             [tf.saved_model.tag_constants.SERVING],
             signature_def_map= {
                 "magic_model": tf.saved_model.signature_def_utils.predict_signature_def(
-                    inputs= {"uid": discriminator.u, "bacon": discriminator.i},
-                    outputs= {"rating": discriminator.label})
+                    inputs= {"uid": discriminator.u, "itemid": discriminator.i},
+                    outputs= {"rating": discriminator.pre_logits})
             })
         builder.save()
 
