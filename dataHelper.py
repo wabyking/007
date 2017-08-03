@@ -194,23 +194,23 @@ class DataHelper():
 
         # pickle.dump([u_seqss,i_seqss,ratings], open(pickle_name, 'wb'),protocol=2) 
 
-    def prepare(self,shuffle=True,mode="train"):
-        i=0
-        pool=Pool(cpu_count())
-        u_seqss,i_seqss,ratingss,useridss,itemidss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
-        batches=[(x,y,z,w,v) for x,y,z,w,v in zip(u_seqss,i_seqss,ratingss,useridss,itemidss)]
-        if mode=="train" and shuffle:      
-            batches =sklearn.utils.shuffle(batches)
-
-        n_batches= int(len(batches)/ self.conf.batch_size)
-        for i in range(0,n_batches):
-            batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
-            u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
-            i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
-            ratings=[ii[2] for ii in batch]
-            userids=[ii[3] for ii in batch]
-            itemids=[ii[4] for ii in batch]
-            yield u_seqs,i_seqs,ratings,userids,itemids
+#    def prepare(self,shuffle=True,mode="train"):
+#        i=0
+#        pool=Pool(cpu_count())
+#        u_seqss,i_seqss,ratingss,useridss,itemidss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
+#        batches=[(x,y,z,w,v) for x,y,z,w,v in zip(u_seqss,i_seqss,ratingss,useridss,itemidss)]
+#        if mode=="train" and shuffle:      
+#            batches =sklearn.utils.shuffle(batches)
+#
+#        n_batches= int(len(batches)/ self.conf.batch_size)
+#        for i in range(0,n_batches):
+#            batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+#            u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
+#            i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
+#            ratings=[int(ii[2]>3.99)  for ii in batch]
+#            userids=[ii[3] for ii in batch]
+#            itemids=[ii[4] for ii in batch]
+#            yield u_seqs,i_seqs,ratings,userids,itemids
 
 
     def getUserVector(self,user_sets):
@@ -266,29 +266,31 @@ class DataHelper():
         return math.sqrt(mse)
     
     def prepare(self,shuffle=True,mode="train"):
+#        pool=Pool(cpu_count())
+#        u_seqs,i_seqs,ratings,userids,itemids=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
+#        
+#        pos_index = [i for i,r in enumerate(ratingss) if r>3.99]
+#        neg_index = [i for i,r in enumerate(ratingss) if r<=3.99]        
+#        pos_batches = [(u_seqss[i],i_seqss[i],1) for i in pos_index]
+#        neg_batches = [(u_seqss[i],i_seqss[i],0) for i in neg_index]            
+#        batches = pos_batches +  neg_batches
+#                
         pool=Pool(cpu_count())
-        u_seqss,i_seqss,ratingss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
-        
-        pos_index = [i for i,r in enumerate(ratingss) if r>3.99]
-        neg_index = [i for i,r in enumerate(ratingss) if r<=3.99]        
-        pos_batches = [(u_seqss[i],i_seqss[i],1) for i in pos_index]
-        neg_batches = [(u_seqss[i],i_seqss[i],0) for i in neg_index]            
-        batches = pos_batches +  neg_batches
-        
-        if mode=="train" and shuffle:             
-            batches = sklearn.utils.shuffle(batches)   
+        u_seqss,i_seqss,ratingss,useridss,itemidss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
+        batches=[(x,y,z,w,v) for x,y,z,w,v in zip(u_seqss,i_seqss,ratingss,useridss,itemidss)]
+        if mode=="train" and shuffle:      
+            batches =sklearn.utils.shuffle(batches)
 
-        #batches=[(x,y,z) for x,y,z in zip(u_seqss,i_seqss,ratingss)]
-       
         n_batches= int(len(batches)/ self.conf.batch_size)
         for i in range(0,n_batches):
             batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
             u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
             i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
-            ratings=[ii[2] for ii in batch]
-            yield u_seqs,i_seqs,ratings
+            ratings=[int(ii[2]>3.99) for ii in batch]
+            userids=[ii[3] for ii in batch]
+            itemids=[ii[4] for ii in batch]
+            yield u_seqs,i_seqs,ratings,userids,itemids
 
-        return math.sqrt(mse)   
 
     def evaluate(self,sess,model):
         users=set(self.data["uid"].unique())
