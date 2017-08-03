@@ -16,7 +16,7 @@ import tensorflow as tf
 
 
 class RNNGenerator(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.1, initdelta=0.05):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -47,6 +47,30 @@ class RNNGenerator(object):
                         
         self.learning_rate = learning_rate
     
+    
+        self.emb_dim = emb_dim
+        self.lamda = lamda  # regularization parameters
+        self.initdelta = initdelta
+
+        with tf.variable_scope('MF'):
+            self.user_embeddings = tf.Variable(
+                tf.random_uniform([self.V_U, self.emb_dim], minval=-self.initdelta, maxval=self.initdelta,
+                                  dtype=tf.float32))
+            self.item_embeddings = tf.Variable(
+                tf.random_uniform([self.V_M, self.emb_dim], minval=-self.initdelta, maxval=self.initdelta,
+                                  dtype=tf.float32))
+            self.item_bias = tf.Variable(tf.zeros([self.V_M]))
+
+        # placeholder definition
+        self.u = tf.placeholder(tf.int32)
+        self.i = tf.placeholder(tf.int32)
+
+        self.u_embedding = tf.nn.embedding_lookup(self.user_embeddings, self.u)
+        self.i_embedding = tf.nn.embedding_lookup(self.item_embeddings, self.i)
+        self.i_bias = tf.gather(self.item_bias, self.i)
+
+
+
     def _decode_lstm(self, h_usr, h_itm, reuse=False):
         with tf.variable_scope('rating', reuse=reuse):
             w_usr = tf.get_variable('w_usr', [self.H, self.H], initializer=self.weight_initializer)
@@ -95,10 +119,8 @@ class RNNGenerator(object):
         x_itm = self._item_embedding(inputs=self.item_sequence)
         x_usr = self._user_embedding(inputs=self.user_sequence)    
 
-        loss = 0.0
-#        loss_list = []
-        itm_lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
-        usr_lstm_cell = tf.nn.rnn_cell.BasicLSTMCell(num_units=self.H)
+        itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
+        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
         
         for t in range(self.T):
             with tf.variable_scope('itm_lstm', reuse=(t!=0)):
@@ -107,13 +129,25 @@ class RNNGenerator(object):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
-        self.predictions = self._decode_lstm(h_usr, h_itm, reuse=False)  
+        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False) 
         
-#                
-        loss = tf.reduce_mean(tf.square(self.predictions - self.rating))
+        self.loss_RNN = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,logits=self.pre_logits_RNN)
         
-        self.pretrain_loss = loss / tf.to_float(batch_size)
-#        
+        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias
+        
+        self.loss_MF = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,
+                                                                logits=self.pre_logits_MF) + self.lamda * (
+            tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.i_bias)
+        )
+                
+        self.joint_loss = self.loss_RNN + self.loss_MF
+        
+#        loss = tf.reduce_mean(tf.square(self.predictions - self.rating))
+        
+        self.pretrain_loss = self.joint_loss / tf.to_float(batch_size)
+        
+        self.predictions = self.pre_logits_RNN + self.pre_logits_MF
+        
         pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)            
         grads = tf.gradients(self.pretrain_loss, tf.trainable_variables())
         grads_and_vars = list(zip(grads, tf.trainable_variables()))
@@ -131,14 +165,14 @@ class RNNGenerator(object):
 #        pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
 #        self.pg_updates = pg_opt.apply_gradients(grads_and_vars=pg_grads_and_vars)                                
         
-    def prediction(self, sess, user_sequence, item_sequence):
+    def prediction(self, sess, user_sequence, item_sequence, u, i):
         outputs = sess.run([self.predictions], feed_dict = {self.user_sequence: user_sequence, 
-                        self.item_sequence: item_sequence})  
+                        self.item_sequence: item_sequence, self.u: u, self.i: i})  
         return outputs
            
-    def pretrain_step(self, sess, user_sequence, item_sequence, rating):        
+    def pretrain_step(self, sess, user_sequence, item_sequence, rating, u, i):        
         outputs = sess.run([self.pretrain_updates, self.pretrain_loss], feed_dict = {self.user_sequence: user_sequence, 
-                        self.item_sequence: item_sequence, self.rating: rating})
+                        self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         return outputs
 
 #    def unsupervised_train_step(self, sess, features_batch, sampled_captions_batch, rewards):
