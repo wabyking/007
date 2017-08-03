@@ -11,7 +11,9 @@ class Singleton(object):
 		import tensorflow as tf
 		flags = tf.app.flags
 
+
 		flags.DEFINE_string("dataset", "moviesLen-100k", "Comma-separated list of hostname:port pairs")
+
 		# flags.DEFINE_string("test_file_name", "ua.test", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("train_file_name", "ratings.csv", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("work_dir", "online_model", "Comma-separated list of hostname:port pairs")
@@ -20,13 +22,16 @@ class Singleton(object):
 		flags.DEFINE_integer("batch_size", 32, "Batch size of data while training")
 		flags.DEFINE_integer("user_delta", 7, "Batch size of data while training")
 		flags.DEFINE_integer("item_delta", 7, "Batch size of data while training")  # TODO :  user_delta could not equals to item_delta
-		flags.DEFINE_integer("item_windows_size", 10, "Batch size of data while training")
-		flags.DEFINE_integer("user_windows_size", 10, "Batch size of data while training")
+
+		flags.DEFINE_integer("item_windows_size", 20, "Batch size of data while training")
+		flags.DEFINE_integer("user_windows_size", 20, "Batch size of data while training")
 		flags.DEFINE_integer("n_epochs", 10, "Batch size of data while training")
 		flags.DEFINE_integer("test_granularity_count", 2, "Batch size of data while training")
 		flags.DEFINE_integer("mf_embedding_dim", 100, "Batch size of data while training")
-		flags.DEFINE_float("learning_rate", 0.1, "Batch size of data while training")
-		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
+		flags.DEFINE_integer("rnn_embedding_dim", 100, "Batch size of data while training")        
+		flags.DEFINE_float("learning_rate", 0.01, "Batch size of data while training")
+		flags.DEFINE_float("grad_clip", 5, "Batch size of data while training")
+
 		flags.DEFINE_float("momentum", 1, "Batch size of data while training")
 
 		flags.DEFINE_integer("threshold", 300, "Erase the users if the number of rating less than threshold")
