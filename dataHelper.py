@@ -17,6 +17,10 @@ class DataHelper():
     def __init__(self,conf,mode="run"):
         self.conf=conf
         self.data = self.loadData()
+        # print(self.data)
+        self.train= self.data[self.data.days<0]
+        self.test= self.data[self.data.days>=0]
+
         self.u_cnt= self.data ["uid"].max()+1
         self.i_cnt= self.data ["itemid"].max()+1                    
         
@@ -49,6 +53,7 @@ class DataHelper():
         y,m,d =    (int(i) for i in self.conf.split_data.split("-"))
         df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(y,m,d )).dt.days
 
+        
         # df = df[ df.date.str >"1997-09" & df.date < "1998-04"]
 
         df["user_granularity"] = df["days"] // self.conf.user_delta   # //means floor div
@@ -62,7 +67,6 @@ class DataHelper():
             users = set(counts_df[counts_df.counts>self.conf.threshold].index)
 
             df = df[df.uid.isin(users)]
-
         
         df['u_original'] = df['uid'].astype('category')
         df['i_original'] = df['itemid'].astype('category')
@@ -96,8 +100,8 @@ class DataHelper():
         pickle_name = "tmp/samples_"+self.conf.dataset+"_"+mode+".pkl"
         if os.path.exists(pickle_name):
             print ("load %s over"% pickle_name )
-            u_seqss,i_seqss,ratingss=pickle.load(open(pickle_name, 'rb'))
-            return u_seqss,i_seqss,ratingss
+            u_seqss,i_seqss,ratingss,useridss,itemidss=pickle.load(open(pickle_name, 'rb'))
+            return u_seqss,i_seqss,ratingss,useridss,itemidss
         else:
             dict_pkl = "tmp/user_item_"+self.conf.dataset+".pkl"
 
@@ -132,11 +136,11 @@ class DataHelper():
                     if mode=="train": #if :                
                         null_user_seqs = len([e for e in user_seqs if e is None])
                         if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
-                            samples.append((user_seqs,item_seqs,rating))    
+                            samples.append((user_seqs,item_seqs,rating,userid,itemid))    
                     else:
-                        samples.append((user_seqs,item_seqs,rating))          
+                        samples.append((user_seqs,item_seqs,rating,userid,itemid))          
             
-        u_seqss, i_seqss, ratingss=[],[],[]         
+        u_seqss, i_seqss, ratingss,useridss,itemidss=[],[],[],[],[]         
         start=time.time()
         
         print("shuffle time spent %f"% (time.time()-start))
@@ -154,15 +158,18 @@ class DataHelper():
             i_seqs= pool.map(getItemVector1,[pairs[1] for pairs in batch])
 
             ratings=[pair[2] for pair in batch]
+            userids=[pair[3] for pair in batch]
+            itemids=[pair[4] for pair in batch]
             u_seqss.extend(u_seqs)
             i_seqss.extend(i_seqs)
             ratingss.extend(ratings)
-            
+            useridss.extend(userids)
+            itemidss.extend(itemids)
             # if i %10==0:
             #     print("processed %d lines"%i)
             # print("spent %f"% (time.time()-start))
-        pickle.dump([u_seqss,i_seqss,ratingss], open(pickle_name, 'wb'),protocol=2)
-        return u_seqss,i_seqss,ratingss
+        pickle.dump([u_seqss,i_seqss,ratingss,useridss,itemidss], open(pickle_name, 'wb'),protocol=2)
+        return u_seqss,i_seqss,ratingss,useridss,itemidss
         
         # if mode=="train" and shuffle:
         #     u_seqss,i_seqss,ratings = sklearn.utils.shuffle(zip(u_seqss,i_seqss,ratings))
@@ -176,6 +183,23 @@ class DataHelper():
 
 
         # pickle.dump([u_seqss,i_seqss,ratings], open(pickle_name, 'wb'),protocol=2) 
+    def prepare(self,shuffle=True,mode="train"):
+        i=0
+        pool=Pool(cpu_count())
+        u_seqss,i_seqss,ratingss,useridss,itemidss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
+        batches=[(x,y,z,w,v) for x,y,z,w,v in zip(u_seqss,i_seqss,ratingss,useridss,itemidss)]
+        if mode=="train" and shuffle:      
+            batches =sklearn.utils.shuffle(batches)
+
+        n_batches= int(len(batches)/ self.conf.batch_size)
+        for i in range(0,n_batches):
+            batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+            u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
+            i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
+            ratings=[ii[2] for ii in batch]
+            userids=[ii[3] for ii in batch]
+            itemids=[ii[4] for ii in batch]
+            yield u_seqs,i_seqs,ratings,userids,itemids
 
     def getUserVector(self,user_sets):
        u_seqs=[]
@@ -226,23 +250,27 @@ class DataHelper():
             results=np.append(results,se)
         # print (sess.run(discriminator.user_bias)[:10])
         mse=np.mean(results)
-        return math.sqrt(mse)
-    
-    def prepare(self,shuffle=True,mode="train"):
-        i=0
-        pool=Pool(cpu_count())
-        u_seqss,i_seqss,ratingss=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
-        batches=[(x,y,z) for x,y,z in zip(u_seqss,i_seqss,ratingss)]
-        if mode=="train" and shuffle:      
-            batches =sklearn.utils.shuffle(batches)
+        return math.sqrt(mse)   
 
-        n_batches= int(len(batches)/ self.conf.batch_size)
-        for i in range(0,n_batches):
-            batch = batches[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
-            u_seqs=pool.map(sparse2dense, [ii[0] for ii in batch])
-            i_seqs=pool.map(sparse2dense, [ii[1] for ii in batch])
-            ratings=[ii[2] for ii in batch]
-            yield u_seqs,i_seqs,ratings
+    def evaluate(self,sess,model):
+        users=set(self.data["uid"].unique())
+        items=set(self.data["itemid"].unique())
+        get_pos_items=lambda group: set(group[group.rating>3.99]["itemid"].tolist())
+        pos_items=self.train.groupby("uid").apply(get_pos_items)
+        print(pos_items.to_dict())
+
+
+
+
+        # print(user_pos[942])
+        for userid in self.data["uid"].unique():
+            candiate_items= items -pos_items.get(userid, set())
+            all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u})
+        exit()
+        for x,y,z,u,i in helper.prepare(mode=test):
+            print(np.array(x).shape)
+            print(u)
+            print(i)
 
 
 def sparse2dense(sparse):
@@ -301,8 +329,9 @@ def main():
 
         
 if __name__ == '__main__':
-    for x,y,z in helper.prepare():
-        print(np.array(x).shape)
+    # for x,y,z in helper.prepare():
+    #     print(np.array(x).shape)
+    helper.evaluate(None,None)
 
 
 #df= helper.train.copy()    

@@ -13,15 +13,18 @@ import math
 from config import Singleton
 import sklearn
 
-from dataHelper  import DataHelper
+from dataHelper  import helper
+from dataHelper  import FLAGS
 
 
 if __name__== "__main__":
 	from multiprocessing import  freeze_support
 
 	freeze_support()
-	flagFactory=Singleton()
-	FLAGS=flagFactory.getInstance()
-	helper=DataHelper(FLAGS)
-	for x,y,z in helper.prepare():
+	# flagFactory=Singleton()
+	# FLAGS=flagFactory.getInstance()
+	# helper=DataHelper(FLAGS)
+	for x,y,z,u,i in helper.prepare():
 	    print(np.array(x).shape)
+	    print(u)
+	    print(i)
