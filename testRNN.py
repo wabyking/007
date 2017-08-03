@@ -12,6 +12,7 @@ from scipy.sparse import csr_matrix,csr_matrix
 import math
 from config import Singleton
 import sklearn
+<<<<<<< HEAD
 import tensorflow as tf
 from RNN import RNNGenerator as G_A
 from dataHelper  import DataHelper
