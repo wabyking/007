@@ -20,8 +20,10 @@ if __name__== "__main__":
 	from multiprocessing import  freeze_support
 
 	freeze_support()
+	
 	flagFactory=Singleton()
 	FLAGS=flagFactory.getInstance()
 	helper=DataHelper(FLAGS)
-	for x,y,z in helper.prepare():
+	for x,y,z in helper.prepare():sflkjsfkj
 	    print(np.array(x).shape)
+	sjhdfgjhsf
