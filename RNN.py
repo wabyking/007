@@ -52,6 +52,15 @@ class RNNGenerator(object):
         self.lamda = lamda  # regularization parameters
         self.initdelta = initdelta
 
+        
+
+        # placeholder definition
+        self.u = tf.placeholder(tf.int32)
+        self.i = tf.placeholder(tf.int32)
+
+        
+
+    def _init_MF(self):
         with tf.variable_scope('MF'):
             self.user_embeddings = tf.Variable(
                 tf.random_uniform([self.V_U, self.emb_dim], minval=-self.initdelta, maxval=self.initdelta,
@@ -59,17 +68,10 @@ class RNNGenerator(object):
             self.item_embeddings = tf.Variable(
                 tf.random_uniform([self.V_M, self.emb_dim], minval=-self.initdelta, maxval=self.initdelta,
                                   dtype=tf.float32))
-            self.item_bias = tf.Variable(tf.zeros([self.V_M]))
-
-        # placeholder definition
-        self.u = tf.placeholder(tf.int32)
-        self.i = tf.placeholder(tf.int32)
-
-        self.u_embedding = tf.nn.embedding_lookup(self.user_embeddings, self.u)
-        self.i_embedding = tf.nn.embedding_lookup(self.item_embeddings, self.i)
-        self.i_bias = tf.gather(self.item_bias, self.i)
-
-
+            self.item_bias = tf.Variable(tf.zeros([self.V_M]))            
+            self.u_embedding = tf.nn.embedding_lookup(self.user_embeddings, self.u)
+            self.i_embedding = tf.nn.embedding_lookup(self.item_embeddings, self.i)
+            self.i_bias = tf.gather(self.item_bias, self.i)
 
     def _decode_lstm(self, h_usr, h_itm, reuse=False):
         with tf.variable_scope('rating', reuse=reuse):
@@ -122,6 +124,8 @@ class RNNGenerator(object):
         itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
         usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
         
+        self._init_MF()
+        
         for t in range(self.T):
             with tf.variable_scope('itm_lstm', reuse=(t!=0)):
                 _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])            
@@ -129,27 +133,21 @@ class RNNGenerator(object):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
-        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False) 
+        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
+        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,logits=self.pre_logits_RNN))
         
-        self.loss_RNN = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,logits=self.pre_logits_RNN)
-        
-        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias
-        
-        self.loss_MF = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,
-                                                                logits=self.pre_logits_MF) + self.lamda * (
-            tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.i_bias)
-        )
+        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias        
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,
+                                                                logits=self.pre_logits_MF)) + self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.i_bias))
                 
         self.joint_loss = self.loss_RNN + self.loss_MF
         
-#        loss = tf.reduce_mean(tf.square(self.predictions - self.rating))
+#        loss = tf.reduce_mean(tf.square(self.predictions - self.rating))        
         
-        self.pretrain_loss = self.joint_loss / tf.to_float(batch_size)
-        
-        self.predictions = self.pre_logits_RNN + self.pre_logits_MF
+        self.pre_joint_logits = self.pre_logits_RNN + self.pre_logits_MF
         
         pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)            
-        grads = tf.gradients(self.pretrain_loss, tf.trainable_variables())
+        grads = tf.gradients(self.joint_loss, tf.trainable_variables())
         grads_and_vars = list(zip(grads, tf.trainable_variables()))
         self.pretrain_updates = pretrain_opt.apply_gradients(grads_and_vars=grads_and_vars)
         
@@ -166,12 +164,12 @@ class RNNGenerator(object):
 #        self.pg_updates = pg_opt.apply_gradients(grads_and_vars=pg_grads_and_vars)                                
         
     def prediction(self, sess, user_sequence, item_sequence, u, i):
-        outputs = sess.run([self.predictions], feed_dict = {self.user_sequence: user_sequence, 
+        outputs = sess.run([self.pre_joint_logits], feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.u: u, self.i: i})  
         return outputs
            
     def pretrain_step(self, sess, user_sequence, item_sequence, rating, u, i):        
-        outputs = sess.run([self.pretrain_updates, self.pretrain_loss], feed_dict = {self.user_sequence: user_sequence, 
+        outputs = sess.run([self.pretrain_updates, self.joint_loss], feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         return outputs
 

@@ -18,9 +18,7 @@ from dataHelper import DataHelper
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-           
-pool=Pool(cpu_count())
-u_seqss,i_seqss,ratingss=helper.getBatch_prepare(pool,mode="test", epoches_size=1)
+
 #
 #pos_index = [i for i,r in enumerate(ratingss) if r>3.99]
 #neg_index = [i for i,r in enumerate(ratingss) if r<=3.99]
@@ -69,7 +67,6 @@ if __name__== "__main__":
     saver = tf.train.Saver(max_to_keep=40)  
     
     for e in range(10):
-        curr_loss = 0  
         start_t = time.time()
         for x,y,z,u,i in helper.prepare():            
             _,l = model.pretrain_step(sess, x, y, z, u, i)    
