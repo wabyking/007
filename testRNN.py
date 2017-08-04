@@ -12,10 +12,9 @@ from scipy.sparse import csr_matrix,csr_matrix
 import math
 from config import Singleton
 import sklearn
-<<<<<<< HEAD
 import tensorflow as tf
 from RNN import RNNGenerator as G_A
-from dataHelper  import DataHelper
+from dataHelper import DataHelper
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
@@ -72,14 +71,15 @@ if __name__== "__main__":
     for e in range(10):
         curr_loss = 0  
         start_t = time.time()
-        for x,y,z in helper.prepare():
-            _,l = model.pretrain_step(sess, x, y, z)    
+        for x,y,z,u,i in helper.prepare():            
+            _,l = model.pretrain_step(sess, x, y, z, u, i)    
+        print( "Elapsed time: ", time.time() - start_t)
         
 #        results=np.array([]) 
         y_true = np.array([]) 
         y_scores = np.array([]) 
-        for x,y,z in helper.prepare(mode="test"):
-            predicted = model.prediction(sess, x, y)
+        for x,y,z,u,i in helper.prepare(mode="test"):
+            predicted = model.prediction(sess, x, y, u, i)
             y_true = np.append(y_true,z)  
             y_scores = np.append(y_scores,predicted)  
 #            error=(np.array(predicted)-np.array(z))
