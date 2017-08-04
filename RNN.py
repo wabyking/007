@@ -151,6 +151,9 @@ class RNNGenerator(object):
         grads_and_vars = list(zip(grads, tf.trainable_variables()))
         self.pretrain_updates = pretrain_opt.apply_gradients(grads_and_vars=grads_and_vars)
         
+        
+        self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias
+        
 #        self.i_prob = tf.gather(
 #            tf.reshape(tf.nn.softmax(tf.reshape(self.all_logits, [1, -1])), [-1]),
 #            self.i)
@@ -167,7 +170,11 @@ class RNNGenerator(object):
         outputs = sess.run([self.pre_joint_logits], feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.u: u, self.i: i})  
         return outputs
-           
+    
+    def predictionItems(self, sess, u):
+        outputs = sess.run([self.all_logits], feed_dict = {self.u: u})  
+        return outputs
+         
     def pretrain_step(self, sess, user_sequence, item_sequence, rating, u, i):        
         outputs = sess.run([self.pretrain_updates, self.joint_loss], feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
