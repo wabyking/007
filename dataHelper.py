@@ -35,13 +35,13 @@ class DataHelper():
         # print(pos_items.to_dict())
 
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items)
-        print ("..")      
+   
             
     def create_dirs(self,dirname):
         if not os.path.exists(dirname):
             os.makedirs(dirname)
 
-    @log_time_delta
+    # @log_time_delta
     def loadData(self):
         dataset_pkl = "tmp/"+self.conf.dataset +".pkl"
         if os.path.exists(dataset_pkl):
@@ -113,7 +113,7 @@ class DataHelper():
             user_windows = self.data.groupby("uid").apply(self.user_windows_apply,user_dict=user_dict)
             item_windows = self.data.groupby("itemid").apply(self.item_windows_apply,item_dict=item_dict)
             pickle.dump([user_dict,item_dict], open(dict_pkl, 'wb'),protocol=2)
-        print ("dict load over")
+        # print ("dict load over")
         return user_dict,item_dict
     def getBatch_prepare(self,pool,mode="train", epoches_size=1,shuffle=True):  
         pickle_name = "tmp/samples_"+self.conf.dataset+"_"+mode+".pkl"
