@@ -30,6 +30,7 @@ class DataHelper():
 
         self.users=set(self.data["uid"].unique())
         self.items=set(self.data["itemid"].unique())
+        
         get_pos_items=lambda group: set(group[group.rating>3.99]["itemid"].tolist())
         self.pos_items=self.train.groupby("uid").apply(get_pos_items)
         # print(pos_items.to_dict())
@@ -274,14 +275,13 @@ class DataHelper():
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
-
     def getBatchUser(self,users):
         n_batches= int(len(df)/ self.conf.batch_size)
         for i in range(0,n_batches):
             yield df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]             
         yield batch[-1*(n_batches% self.conf.batch_size):]
+        
     def getTestFeedingData(self,userid, rerank_indexs):
-
         u_seqs=[]
         for t in range(-1*self.conf.user_windows_size,0):
             u_seqs.append(self.user_dict[userid].get(t,None))
@@ -292,6 +292,7 @@ class DataHelper():
                 i_seqs.append(self.item_dict[itemid].get(t,None))
             i_seqss.append(i_seqs)
         return self.getUserVector(u_seqs),[i for i in map(self.getItemVector, i_seqss)]
+    
     def evaluate(self,sess,model):
 
         # print(pos_items.to_dict())
@@ -346,8 +347,10 @@ helper=DataHelper(FLAGS)
 def getScore1(user_id):
 
     all_rating= np.random.random( len(helper.items)+1)  #[user_id]
-    # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
-    candiate_index = helper.items - helper.pos_items.get(user_id, set())
+    # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id] MF generates all ratings to pick the highest K candidates.
+    
+    candiate_index = helper.items - helper.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
+    
     scores =[ (index,all_rating[index]) for index in candiate_index ]
     sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
 
@@ -382,9 +385,11 @@ def getScore1(user_id):
 
 def getScore(sess,model,items,pos_items,test_pos_items,re_rank_list_length ,user_windows_size, user_dict,item_dict,user_id):
 
-    all_rating= np.random.random( len(items)+1)  #[user_id]
-    # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
-    candiate_index = items - pos_items.get(user_id, set())
+#    all_rating= np.random.random( len(items)+1)  #[user_id]
+   
+    all_rating = model.predictionItems(sess,user_id)  #[user_id] MF generated all rating to pick the highest K candidates.
+    
+    candiate_index = items - pos_items.get(user_id, set()) # The rest items need to be predicted expect the rated ones in the train data.
     scores =[ (index,all_rating[index]) for index in candiate_index ]
     sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
 
@@ -394,6 +399,7 @@ def getScore(sess,model,items,pos_items,test_pos_items,re_rank_list_length ,user
     for t in range(-1*user_windows_size,0):
         u_seqs.append(user_dict[user_id].get(t,None))
     i_seqss=[]
+    
     for itemid in rerank_indexs:
         i_seqs=[]
         for t in range(-1*user_windows_size,0):
@@ -404,7 +410,6 @@ def getScore(sess,model,items,pos_items,test_pos_items,re_rank_list_length ,user
     i_seqss=[i for i in map(getItemVector, i_seqss)]
     # print(np.array(u_seqs).shape)
     # print(np.array(i_seqss).shape)
-
     
     # feed_dict={MFRNNmodel.u:user_id, MFRNNmodel.i, MFRNNmodel.useqs:u_seqs , MFRNNmodel.i_seqs:i_seqs}
     # scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
