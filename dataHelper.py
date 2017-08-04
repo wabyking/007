@@ -336,9 +336,10 @@ class DataHelper():
         # getScore_this_call = partial(getScore,sess,model, self.items,self.pos_items,self.test_pos_items,self.conf.re_rank_list_length,self.conf.user_windows_size, self.user_dict,self.item_dict )
         # print("function build over")
         # print(getScore_this_call)
-        # results=pool.map(getScore_this_call,self.users)
         results=pool.map(getScore1,self.users)
-        print (np.mean(np.array(results),0))
+        # results=pool.map(getScore1,self.users)
+        return (np.mean(np.array(results),0))
+
 
 flagFactory=Singleton()
 FLAGS=flagFactory.getInstance()
@@ -354,23 +355,9 @@ def getScore1(user_id):
     rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
     u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
 
-
-    u_seqs=[]
-    for t in range(-1*helper.conf.user_windows_size,0):
-        u_seqs.append(helper.user_dict[user_id].get(t,None))
-    i_seqss=[]
-    for itemid in rerank_indexs:
-        i_seqs=[]
-        for t in range(-1*helper.conf.user_windows_size,0):
-            i_seqs.append(helper.item_dict[itemid].get(t,None))
-        i_seqss.append(i_seqs)
-
-    u_seqs= getUserVector(u_seqs),
-    i_seqss=[i for i in map(getItemVector, i_seqss)]
     # print(np.array(u_seqs).shape)
     # print(np.array(i_seqss).shape)
-
-    
+   
     # feed_dict={MFRNNmodel.u:user_id, MFRNNmodel.i, MFRNNmodel.useqs:u_seqs , MFRNNmodel.i_seqs:i_seqs}
     # scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
     scores=np.random.random( len(rerank_indexs))
@@ -389,7 +376,6 @@ def getScore(sess,model,items,pos_items,test_pos_items,re_rank_list_length ,user
     sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
 
     rerank_indexs= ([ii[0] for ii in sortedScores[:re_rank_list_length]])
-    u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
     u_seqs=[]
     for t in range(-1*user_windows_size,0):
         u_seqs.append(user_dict[user_id].get(t,None))
@@ -517,11 +503,9 @@ if __name__ == '__main__':
     # start = time.time() 
     # helper.evaluate(None,None)
     # print("time spented %.6f"%(time.time()-start))
-    flagFactory=Singleton()
-    FLAGS=flagFactory.getInstance()
-    helper=DataHelper(FLAGS)
+    
     start = time.time() 
     print ("start")
-    helper.evaluateMultiProcess(None,None)
+    print (helper.evaluateMultiProcess(None,None))
     print("time spented %.6f"%(time.time()-start))
 
