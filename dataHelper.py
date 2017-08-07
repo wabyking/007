@@ -322,9 +322,11 @@ class DataHelper():
         print (np.mean(np.array(results),0))
     def evaluateMultiProcess(self,sess,model):
 
-        pool=Pool(cpu_count())
-        # results = []
-
+        # pool=Pool(cpu_count())
+        results = []
+        for user_id in self.users:
+            result=getScore1(user_id,sess,model)
+            results.append(result)
         # for user_id in self.users:   # pool.map
         #     result= pool.apply_async(getScore1,args=(user_id)).get()
         #     # result= pool.apply_async(getScore1,args=(user_id,sess,model, self.items,self.pos_items,self.test_pos_items,self.conf.re_rank_list_length,self.conf.user_windows_size, self.user_dict,self.item_dict)).get()
@@ -336,7 +338,7 @@ class DataHelper():
         # getScore_this_call = partial(getScore,sess,model, self.items,self.pos_items,self.test_pos_items,self.conf.re_rank_list_length,self.conf.user_windows_size, self.user_dict,self.item_dict )
         # print("function build over")
         # print(getScore_this_call)
-        results=pool.map(getScore1,self.users)
+
         # results=pool.map(getScore1,self.users)
         return (np.mean(np.array(results),0))
 
@@ -344,7 +346,7 @@ class DataHelper():
 flagFactory=Singleton()
 FLAGS=flagFactory.getInstance()
 helper=DataHelper(FLAGS)
-def getScore1(user_id):
+def getScore1(user_id,sess,model):
 
     all_rating= np.random.random( len(helper.items)+1)  #[user_id]
     # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
@@ -505,7 +507,6 @@ if __name__ == '__main__':
     # print("time spented %.6f"%(time.time()-start))
     
     start = time.time() 
-    print ("start")
     print (helper.evaluateMultiProcess(None,None))
     print("time spented %.6f"%(time.time()-start))
 
