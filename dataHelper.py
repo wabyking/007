@@ -30,6 +30,7 @@ class DataHelper():
 
         self.users=set(self.data["uid"].unique())
         self.items=set(self.data["itemid"].unique())
+        
         get_pos_items=lambda group: set(group[group.rating>3.99]["itemid"].tolist())
         self.pos_items=self.train.groupby("uid").apply(get_pos_items)
         # print(pos_items.to_dict())
@@ -274,14 +275,13 @@ class DataHelper():
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
-
     def getBatchUser(self,users):
         n_batches= int(len(df)/ self.conf.batch_size)
         for i in range(0,n_batches):
             yield df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]             
         yield batch[-1*(n_batches% self.conf.batch_size):]
+        
     def getTestFeedingData(self,userid, rerank_indexs):
-
         u_seqs=[]
         for t in range(-1*self.conf.user_windows_size,0):
             u_seqs.append(self.user_dict[userid].get(t,None))
@@ -292,6 +292,7 @@ class DataHelper():
                 i_seqs.append(self.item_dict[itemid].get(t,None))
             i_seqss.append(i_seqs)
         return self.getUserVector(u_seqs),[i for i in map(self.getItemVector, i_seqss)]
+    
     def evaluate(self,sess,model):
 
         # print(pos_items.to_dict())
@@ -320,6 +321,7 @@ class DataHelper():
             print(result)
             results.append(result)
         print (np.mean(np.array(results),0))
+        
     def evaluateMultiProcess(self,sess,model):
 
         # pool=Pool(cpu_count())
@@ -340,7 +342,7 @@ class DataHelper():
         # print(getScore_this_call)
 
         # results=pool.map(getScore1,self.users)
-        return (np.mean(np.array(results),0))
+
 
 
 flagFactory=Singleton()
@@ -348,9 +350,11 @@ FLAGS=flagFactory.getInstance()
 helper=DataHelper(FLAGS)
 def getScore1(user_id,sess,model):
 
-    all_rating= np.random.random( len(helper.items)+1)  #[user_id]
-    # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
-    candiate_index = helper.items - helper.pos_items.get(user_id, set())
+#    all_rating= np.random.random( len(helper.items)+1)  #[user_id]
+    all_rating = model.predictionItems(sess,user_id)[0]#[user_id] MF generated all rating to pick the highest K candidates.
+    
+    candiate_index = helper.items - helper.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
+    
     scores =[ (index,all_rating[index]) for index in candiate_index ]
     sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
 
@@ -362,45 +366,13 @@ def getScore1(user_id,sess,model):
    
     # feed_dict={MFRNNmodel.u:user_id, MFRNNmodel.i, MFRNNmodel.useqs:u_seqs , MFRNNmodel.i_seqs:i_seqs}
     # scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
-    scores=np.random.random( len(rerank_indexs))
+    scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
+    
+#    scores=np.random.random( len(rerank_indexs))
     sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
     rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores]
-    result =getResult(rank_list)
+    result = getResult(rank_list)
     # print (result)
-    return result
-
-def getScore(sess,model,items,pos_items,test_pos_items,re_rank_list_length ,user_windows_size, user_dict,item_dict,user_id):
-
-    all_rating= np.random.random( len(items)+1)  #[user_id]
-    # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
-    candiate_index = items - pos_items.get(user_id, set())
-    scores =[ (index,all_rating[index]) for index in candiate_index ]
-    sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
-
-    rerank_indexs= ([ii[0] for ii in sortedScores[:re_rank_list_length]])
-    u_seqs=[]
-    for t in range(-1*user_windows_size,0):
-        u_seqs.append(user_dict[user_id].get(t,None))
-    i_seqss=[]
-    for itemid in rerank_indexs:
-        i_seqs=[]
-        for t in range(-1*user_windows_size,0):
-            i_seqs.append(item_dict[itemid].get(t,None))
-        i_seqss.append(i_seqs)
-
-    u_seqs= getUserVector(u_seqs),
-    i_seqss=[i for i in map(getItemVector, i_seqss)]
-    # print(np.array(u_seqs).shape)
-    # print(np.array(i_seqss).shape)
-
-    
-    # feed_dict={MFRNNmodel.u:user_id, MFRNNmodel.i, MFRNNmodel.useqs:u_seqs , MFRNNmodel.i_seqs:i_seqs}
-    # scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
-    scores=np.random.random( len(rerank_indexs))
-    sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-    rank_list= [1 if ii[0] in test_pos_items.get(user_id, set()) else 0 for ii in sortedScores]
-    result =getResult(rank_list)
-    print (result)
     return result
 
 def sparse2dense(sparse):
@@ -506,7 +478,14 @@ if __name__ == '__main__':
     # helper.evaluate(None,None)
     # print("time spented %.6f"%(time.time()-start))
     
+
     start = time.time() 
     print (helper.evaluateMultiProcess(None,None))
     print("time spented %.6f"%(time.time()-start))
+
+#    start = time.time() 
+#    print ("start")
+#    print (helper.evaluateMultiProcess(None,None))
+#    print("time spented %.6f"%(time.time()-start))
+>>>>>>> 84c8dc51045edffe8814034a9f03d9a5c2fe55d3
 

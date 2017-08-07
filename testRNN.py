@@ -14,20 +14,16 @@ from config import Singleton
 import sklearn
 import tensorflow as tf
 from RNN import RNNGenerator as G_A
-from dataHelper import DataHelper
+from dataHelper import helper
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 
-           
-pool=Pool(cpu_count())
-u_seqss,i_seqss,ratingss=helper.getBatch_prepare(pool,mode="test", epoches_size=1)
-#
 #pos_index = [i for i,r in enumerate(ratingss) if r>3.99]
 #neg_index = [i for i,r in enumerate(ratingss) if r<=3.99]
 #
 #pos_batches = [(u_seqss[i],i_seqss[i],1) for i in pos_index]
 #neg_batches = [(u_seqss[i],i_seqss[i],0) for i in neg_index]
-#                
+#
 #if mode=="train" and shuffle:                
 #    batches = pos_batches +  neg_batches
 #    batches = sklearn.utils.shuffle(batches)    
@@ -48,7 +44,7 @@ if __name__== "__main__":
     freeze_support()
     flagFactory=Singleton()
     FLAGS=flagFactory.getInstance()
-    helper=DataHelper(FLAGS)	            
+#    helper=DataHelper(FLAGS)	            
     
     model = G_A(itm_cnt = 1682, 
              usr_cnt = 943, 
@@ -61,19 +57,20 @@ if __name__== "__main__":
              initdelta = 0.05)
 
     model.build_pretrain()
-    tf.get_variable_scope().reuse_variables()
-    
+    tf.get_variable_scope().reuse_variables()    
     
     sess = tf.InteractiveSession()    
     tf.global_variables_initializer().run()
     saver = tf.train.Saver(max_to_keep=40)  
     
     for e in range(10):
-        curr_loss = 0  
         start_t = time.time()
         for x,y,z,u,i in helper.prepare():            
             _,l = model.pretrain_step(sess, x, y, z, u, i)    
         print( "Elapsed time: ", time.time() - start_t)
+        
+        
+        print (helper.evaluateMultiProcess(sess,model))
         
 #        results=np.array([]) 
         y_true = np.array([]) 
@@ -89,4 +86,4 @@ if __name__== "__main__":
 #        mse=np.mean(results)
 #        print ("rmse = %.6f" % math.sqrt(mse))
         print( "Elapsed time: ", time.time() - start_t)
-        
+                
