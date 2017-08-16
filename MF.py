@@ -95,7 +95,7 @@ class DIS():
             # self.loss=self.point_loss
             self.loss= self.eta* self.fusion_point_loss  + (1- self.eta)* self.pair_loss
 
-        self.l2_loss=self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.i_bias))
+        self.l2_loss=self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.item_bias))
         self.pre_loss=self.loss+self.l2_loss
 
         # self.global_step = tf.get_variable('global_step_in_class', [], initializer=tf.constant_initializer(0), trainable=False)
@@ -127,6 +127,24 @@ class DIS():
         cPickle.dump(param, open(filename, 'wb'))
 
 
+    def predictionItems(self, sess, u):
+        outputs = sess.run(self.all_logits, feed_dict = {self.u: u})  
+        return outputs
+         
+    def pretrain_step(self, sess,  rating, u, i): 
+
+        outputs = sess.run([self.d_updates, self.pre_loss], feed_dict = {self.label: rating, self.u: u, self.i: i})
+        return outputs
+
+    def pretrain_step_mf(self, sess,  rating, u): 
+
+        outputs = sess.run([self.d_updates, self.pre_loss], feed_dict = {self.label: rating, self.u: u, self.i: i})
+        return outputs
+    def prediction(self, sess, u, i):
+        outputs = sess.run([self.pre_logits], feed_dict = { self.u: u, self.i: i})  
+        return outputs
+
+
 np.random.seed(70)
 param = None
 loss_type="point"
@@ -143,12 +161,12 @@ def createModel( checkpoint_dir="model/"):
     with  tf.Session(config=config) as sess:   
         sess.run(tf.global_variables_initializer())
         
-        for epoch in range(5):
+        for epoch in range(100):
             for i,(uid,itemid,rating) in enumerate(helper.getBatch4MF()):
 
                 feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
                 _, model_loss,l2_loss,pre_logits = sess.run([discriminator.d_updates,discriminator.point_loss,discriminator.l2_loss,discriminator.pre_logits],feed_dict=feed_dict)    
-
+                print(pre_logits )
             train_performance=helper.testModel(sess,discriminator,flag="train")
             test_performance=helper.testModel(sess,discriminator,flag="test")
 
