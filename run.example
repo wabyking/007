@@ -1,0 +1,3 @@
+python testRNN.py --model_type=mf --pretrained=False    --learning_rate=0.001
+python testRNN.py --model_type=rnn --pretrained=False  
+python testRNN.py --model_type=joint --pretrained=False re_rank_list_length=50
