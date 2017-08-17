@@ -135,7 +135,7 @@ def main(checkpoint_dir="model/"):
        	# print(i)
         print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
         scores= (helper.evaluateMultiProcess(sess,model))
-        print(helper.evaluateRMSE(sess,model))
+        # print(helper.evaluateRMSE(sess,model))
         print(scores)
         if FLAGS.model_type=="mf":
             curentt_p5_score=scores[1]
