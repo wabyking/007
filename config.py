@@ -22,6 +22,7 @@ class Singleton(object):
 		flags.DEFINE_string("train_file_name", "ratings.csv", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("work_dir", "online_model", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_integer("export_version", "80", "Comma-separated list of hostname:port pairs")
+		flags.DEFINE_integer("subset_size", 2000, "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("moviesLen_100k_split_data", "1998-03-08", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("netflix_6_mouth_split_data", "2005-12-01", "Comma-separated list of hostname:port pairs")
 

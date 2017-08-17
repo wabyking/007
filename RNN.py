@@ -226,7 +226,9 @@ class RNNGenerator(object):
 #        pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
 #        self.pg_updates = pg_opt.apply_gradients(grads_and_vars=pg_grads_and_vars)                                
         
-    def prediction(self, sess, user_sequence, item_sequence, u, i):
+    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
+        if sparse:
+            user_sequence,item_sequence=[ii.toarray() for ii in user_sequence],[ii.toarray() for ii in item_sequence]
         outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.u: u, self.i: i})  
         return outputs

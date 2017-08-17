@@ -36,15 +36,14 @@ class DataHelper():
 
         # print(x,y,z)
 
-        self.u_cnt= self.data ["uid"].max()+2  #  how?
+        self.u_cnt= self.data ["uid"].max()+1  #  how?
         
 
-        self.i_cnt= self.data ["itemid"].max()+2
+        self.i_cnt= self.data ["itemid"].max()+1
 
         
         self.user_dict,self.item_dict=self.getdicts()
-       
-       
+
         self.users=set(self.data["uid"].unique())
         self.test_users=set(self.test["uid"].unique())
         self.items=set(self.data["itemid"].unique())
@@ -61,7 +60,7 @@ class DataHelper():
         # print(pos_items.to_dict())
                 
         user_item_pos_rating_time_dict= lambda group:{item:time for i,(item,time)  in group[group.rating>3.99][["itemid","user_granularity"]].iterrows()}
-        self.user_item_pos_rating_time_dict=self.train[:1000].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
+        self.user_item_pos_rating_time_dict=self.train[:self.conf.subset_size].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
        
         
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items).to_dict()
@@ -204,7 +203,8 @@ class DataHelper():
         return samples
 
 
-    def getSeqOverAlltime(self,userid, itemid):   #does labeled data also do this?        
+    def getSeqOverAlltime(self,userid, itemid):   #does labeled data also do this? 
+
         u_seqs,i_seqs=[],[]
         for t in range(self.data["user_granularity"].min(),0):
     
@@ -215,10 +215,12 @@ class DataHelper():
         for t in range( self.data["user_granularity"].min() ,0- self.conf.user_windows_size):
             u_seqss.append( u_seqs[t:t+self.conf.user_windows_size])
             i_seqss.append( i_seqs[t:t+self.conf.user_windows_size])     
+
         if self.conf.is_sparse:
             return [i for i in map(getUserVector1, u_seqss)],[i for i in map(getItemVector1, i_seqss)]
         else:              
             return [i for i in map(self.getUserVector, u_seqss)],[i for i in map(self.getItemVector, i_seqss)]
+        
 
     def getSeqInTime(self,userid,itemid,t):
         u_seqs,i_seqs=[],[]
@@ -253,7 +255,8 @@ class DataHelper():
 
                 neg_item_id = neg[i]
                 u_seqss,i_seqss= self.getSeqOverAlltime(user,neg_item_id)
-                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss))
+
+                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
                 index=np.argmax(predicted)
                 samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
  
@@ -262,7 +265,7 @@ class DataHelper():
 
     def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
-        pickle_name = "tmp/samples_"+ ("dns" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
