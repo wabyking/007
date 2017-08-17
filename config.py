@@ -45,7 +45,7 @@ class Singleton(object):
 		flags.DEFINE_integer("threshold", 300, "Erase the users if the number of rating less than threshold")
 		flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
 		flags.DEFINE_boolean("pretrained", False, "Test accuracy")
-		flags.DEFINE_boolean("is_sparse", False, "Test accuracy")
+		flags.DEFINE_boolean("is_sparse", True, "Test accuracy")
 		flags.DEFINE_boolean("rating_flag", False, "Test accuracy")
 		flags.DEFINE_boolean("dns", False, "Test accuracy")
 		FLAGS= flags.FLAGS
