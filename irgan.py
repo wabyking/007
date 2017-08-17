@@ -120,19 +120,17 @@ def main(checkpoint_dir="model/"):
         for g_epoch in range(50):  # 50
             for user in helper.data["uid"].unique(): 
 
-                pos_items_time_dict=helper.user_item_pos_rating_time_dict.get(user,{})
-                if len(pos_items_time_dict)==0:                   # todo  not do this
-                    continue
+#                pos_items_time_dict=helper.user_item_pos_rating_time_dict.get(user,{})
+#                if len(pos_items_time_dict)==0:                   # todo  not do this
+#                    continue
                 all_rating = gen.predictionItems(sess1,user)                           # todo delete the pos ones
                 exp_rating = np.exp(np.array(all_rating) *helper.conf.temperature)
                 prob = exp_rating / np.sum(exp_rating)
 
-                neg = np.random.choice(np.arange(helper.i_cnt), size=len(pos_items_time_dict), p=prob)
+                neg = np.random.choice(np.arange(helper.i_cnt), size=len(helper.conf.gan_k), p=prob)
                 samples=[]
-                for  i,(pos,t) in enumerate(pos_items_time_dict.items()):                # gan_k guding
+                for  neg_item_id in neg:                # gan_k guding
 
-
-                    neg_item_id = neg[i]
                     u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
                     predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss))
                     index=np.argmax(predicted)

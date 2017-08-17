@@ -254,7 +254,7 @@ class RNNGenerator(object):
 
     def getRewards(self,sess, samples):
         # print([item for item in (sample[i] for i in range(4) for sample in samples )])
-        print
+        
         u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
 
         return self.prediction(sess,u_seq,i_seq,u,i) 
@@ -269,25 +269,6 @@ class RNNGenerator(object):
 #                        self.captions: sampled_captions_batch, self.rewards: rewards})
 #    
 #        return outputs
-    def saveRNNModel(self, sess, filename):
-        param = sess.run(self.paras_rnn)
-        pickle.dump(param, open(filename, 'wb'))
-    def restoreRNNModel(self,filename):
-        paras_rnn =pickle.load(open(filename,"rb"))
-        for var,para in zip(self.paras_rnn,paras_rnn):
-            var=tf.Variable(para)
-        print("load rnn model over")
 
-    def saveModel(self, sess, filename,save_type="mf"):
-        if save_type=="mf":
-            paras=self.paras_mf
-        elif save_type=="rnn":
-            paras=self.paras_rnn
-        else:
-            paras=[]
-            paras.extend(self.paras_mf)
-            paras.extend(self.paras_rnn)
-        param_values = sess.run(paras)
-        pickle.dump(param_values, open(filename, 'wb'))
 
     

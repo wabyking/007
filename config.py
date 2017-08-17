@@ -26,6 +26,7 @@ class Singleton(object):
 		flags.DEFINE_string("netflix_6_mouth_split_data", "2005-12-01", "Comma-separated list of hostname:port pairs")
 
 		flags.DEFINE_integer("batch_size", 128, "Batch size of data while training")
+         flags.DEFINE_integer("gan_k", 128, "")
 		flags.DEFINE_integer("user_delta", 7, "Batch size of data while training")
 		flags.DEFINE_integer("item_delta", 7, "Batch size of data while training")  # TODO :  user_delta could not equals to item_delta
 		flags.DEFINE_integer("re_rank_list_length", 25, "Batch size of data while training")

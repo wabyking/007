@@ -28,46 +28,33 @@ class DataHelper():
         self.data = self.loadData()
         df = self.data
 
+        self.train= self.data[self.data.days<0]
+        self.test= self.data[self.data.days>=0]
         x=(len(df[df["user_granularity"]<=(df["user_granularity"].min()+self.conf.user_windows_size) ]))
         y=(len(df[(df["user_granularity"]>(df["user_granularity"].min()+self.conf.user_windows_size)) & (df["user_granularity"]<0)]))
         z=(len(df[ (df["user_granularity"]>=0)]))
 
         # print(x,y,z)
 
-        # exit()
-        start=time.time()
-        # print(self.data)
-        self.train= self.data[self.data.days<0]
-        self.test= self.data[self.data.days>=0]
-        print(len(self.train))
-        print(len(self.test))
+        self.u_cnt= self.data ["uid"].max()+2  #  how?
         
+
+        self.i_cnt= self.data ["itemid"].max()+2
+
+        
+        self.user_dict,self.item_dict=self.getdicts()
+       
+       
+        self.users=set(self.data["uid"].unique())
+        self.test_users=set(self.test["uid"].unique())
+        self.items=set(self.data["itemid"].unique())
+        self.shared_users=set(self.train["uid"].unique()) & set(self.test["uid"].unique())
         # train_users=self.train["uid"].unique()
         # test_users=self.test["uid"].unique()
         # interaction_users = set(train_users) & set(test_users)
         # print(len(train_users))
         # print(len(test_users))
         # print(len(interaction_users))
-        # exit()
-
-        self.u_cnt= self.data ["uid"].max()+1  #  how?
-        
-
-        self.i_cnt= self.data ["itemid"].max()+1
-
-        
-        self.user_dict,self.item_dict=self.getdicts()
-        # print( "The number of users: %d" % self.u_cnt)
-        # print( "The number of items: %d" % self.i_cnt) 
-        
-       
-        self.users=set(self.data["uid"].unique())
-        self.test_users=set(self.test["uid"].unique())
-        self.items=set(self.data["itemid"].unique())
-        self.shared_users=set(self.train["uid"].unique()) & set(self.test["uid"].unique())
-        print(len(self.shared_users))
-        print(len(self.test_users))
-  
 
         get_pos_items=lambda group: set(group[group.rating>3.99]["itemid"].tolist())
         self.pos_items=self.train.groupby("uid").apply(get_pos_items)
@@ -76,6 +63,7 @@ class DataHelper():
         user_item_pos_rating_time_dict= lambda group:{item:time for i,(item,time)  in group[group.rating>3.99][["itemid","user_granularity"]].iterrows()}
         self.user_item_pos_rating_time_dict=self.train[:1000].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
        
+        
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items).to_dict()
 
 
