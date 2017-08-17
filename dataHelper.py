@@ -54,9 +54,6 @@ class DataHelper():
         
 
         self.i_cnt= self.data ["itemid"].max()+1
-        print(self.i_cnt)
-        print(self.data["itemid"].max())
-        exit()
 
         
         self.user_dict,self.item_dict=self.getdicts()
