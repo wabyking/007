@@ -53,8 +53,9 @@ class DataHelper():
         self.u_cnt= self.data ["uid"].max()+1
         
 
-        self.i_cnt= self.data ["itemid"].max()+1                    
-        
+        self.i_cnt= self.data ["itemid"].max()+1
+
+
         
         self.user_dict,self.item_dict=self.getdicts()
         # print( "The number of users: %d" % self.u_cnt)
@@ -72,7 +73,10 @@ class DataHelper():
         get_pos_items=lambda group: set(group[group.rating>3.99]["itemid"].tolist())
         self.pos_items=self.train.groupby("uid").apply(get_pos_items)
         # print(pos_items.to_dict())
-
+                
+        user_item_pos_rating_time_dict= lambda group:{item:time for i,(item,time)  in group[group.rating>3.99][["itemid","user_granularity"]].iterrows()}
+        self.user_item_pos_rating_time_dict=self.train[:1000].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
+       
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items).to_dict()
 
 
@@ -120,12 +124,12 @@ class DataHelper():
             df = df[df.uid.isin(users)]
 
  
-        # df['u_original'] = df['uid'].astype('category')
-        # df['i_original'] = df['itemid'].astype('category')
-        # df['uid'] = df['u_original'].cat.codes
-        # df['itemid'] = df['i_original'].cat.codes
-        # df = df.drop('u_original', 1)
-        # df = df.drop('i_original', 1)
+        df['u_original'] = df['uid'].astype('category')
+        df['i_original'] = df['itemid'].astype('category')
+        df['uid'] = df['u_original'].cat.codes
+        df['itemid'] = df['i_original'].cat.codes
+        df = df.drop('u_original', 1)
+        df = df.drop('i_original', 1)
         
         pickle.dump(df, open(dataset_pkl, 'wb'),protocol=2)
         return df
@@ -147,6 +151,8 @@ class DataHelper():
             item_dict[itemid][item_granularity]= group[group.item_granularity==item_granularity][["uid","rating"]]
             # print (item_dict[itemid][item_granularity])
         return len(group["item_granularity"].unique())
+
+            
     # @log_time_delta
     def getdicts(self):
         dict_pkl = "tmp/user_item_"+self.conf.dataset+".pkl"
@@ -166,149 +172,131 @@ class DataHelper():
         # print ("dict load over")
         return user_dict,item_dict
     
-    def prepare_uniform(self,pool,mode="train", epoches_size=1,shuffle=True):  
+    def prepare_uniform(self,pool=None,mode="train", epoches_size=1,shuffle=True,fresh=False):  
         # pickle_name = "tmp/samples_"+self.conf.dataset+"_" +mode+".pkl"
-        pickle_name = "tmp/samples_"+self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
-        if os.path.exists(pickle_name):
-            import gc
-            gc.disable()
-            # print("laod the data %s"% pickle_name)
-            # print ("load %s over"% pickle_name )
-            u_seqss,i_seqss,ratingss,useridss,itemidss=pickle.load(open(pickle_name, 'rb'))
+             
+        df = self.data
+        samples=[]
 
-            gc.enable()
-            return u_seqss,i_seqss,ratingss,useridss,itemidss
-        else:         
-            df = self.data
-            samples=[]
+        if mode=="train":
+            start=df["user_granularity"].min()+self.conf.user_windows_size
+            end=0
 
-            if mode=="train":
-                start=df["user_granularity"].min()+self.conf.user_windows_size
-                end=0
+        else:
+            start=0
+            end=df["user_granularity"].max()+1
 
-            else:
-                start=0
-                end=df["user_granularity"].max()+1
-
-            for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
-                print(t)
-                for index,row in df[df.user_granularity==t].iterrows():
-                    userid =row["uid"]
-                    itemid =row["itemid"]
-                    rating =row["rating"] # get the r_ijt
-                    item_seqs,user_seqs=[],[]
-                    for pre_t in range(t-self.conf.user_windows_size ,t):    
-                        user_seqs.append(self.user_dict[userid].get(pre_t,None))
-                        item_seqs.append(self.item_dict[itemid].get(pre_t,None))
-                    
-                    if mode=="train": #if :                
-                        null_user_seqs = len([e for e in user_seqs if e is None])
-                        if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
-                            samples.append((user_seqs,item_seqs,rating,userid,itemid))    
+        for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
+            print(t)
+            for index,row in df[df.user_granularity==t].iterrows():
+                userid =row["uid"]
+                itemid =row["itemid"]
+                rating =row["rating"] # get the r_ijt
+                item_seqs,user_seqs=[],[]
+                for pre_t in range(t-self.conf.user_windows_size ,t):  
+                    if self.conf.is_sparse:
+                        
+                        user_seqs.append( self.user_dict[userid].get(pre_t,None))
+                        item_seqs.append( self.item_dict[itemid].get(pre_t,None))
                     else:
-                        samples.append((user_seqs,item_seqs,rating,userid,itemid))          
-            
-        u_seqss, i_seqss, ratingss,useridss,itemidss=[],[],[],[],[]         
-        start=time.time()
-        
-        print("shuffle time spent %f"% (time.time()-start))
-        n_batches= int(len(samples)/ self.conf.batch_size)
-        print("%d batch"% n_batches)
+                        user_seqs.append( self.user_dict[userid].get(pre_t,None))
+                        item_seqs.append( self.item_dict[itemid].get(pre_t,None))
 
+                if self.conf.is_sparse:
+                    user_seqs,item_seqs=getUserVector1(user_seqs),getItemVector1(item_seqs)
+                else:
+                    user_seqs,item_seqs=self.getUserVector(user_seqs),self.getItemVector(item_seqs)
                 
-        for i in range(0,n_batches):
-            start=time.time()
-
-            batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
-            #u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
-            #i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
-            if mp:
-                u_seqs= pool.map(getUserVector1,[pairs[0] for pairs in batch])
-                i_seqs= pool.map(getItemVector1,[pairs[1] for pairs in batch])
-            else:
-                u_seqs= map(getUserVector1,[pairs[0] for pairs in batch])
-                i_seqs= map(getItemVector1,[pairs[1] for pairs in batch])
-
-            ratings=[pair[2] for pair in batch]
-            userids=[pair[3] for pair in batch]
-            itemids=[pair[4] for pair in batch]
-            u_seqss.extend(u_seqs)
-            i_seqss.extend(i_seqs)
-            ratingss.extend(ratings)
-            useridss.extend(userids)
-            itemidss.extend(itemids)
-            # if i %10==0:
-            #     print("processed %d lines"%i)
-            # print("spent %f"% (time.time()-start))
-        pickle.dump([u_seqss,i_seqss,ratingss,useridss,itemidss], open(pickle_name, 'wb'),protocol=2)
-        return u_seqss,i_seqss,ratingss,useridss,itemidss
+                if mode=="train": #if :                
+                    null_user_seqs = len([e for e in user_seqs if e is None])
+                    if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
+                        samples.append((user_seqs,item_seqs,rating,userid,itemid))    
+                else:
+                    samples.append((user_seqs,item_seqs,rating,userid,itemid))          
         
-        # if mode=="train" and shuffle:
-        #     u_seqss,i_seqss,ratings = sklearn.utils.shuffle(zip(u_seqss,i_seqss,ratings))
-
-        # n_batches= int(len(df)/ self.conf.batch_size)
-        # for i in range(0,n_batches):
-        #     batch = df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
-        #     yield batch["uid"],batch["itemid"],batch["rating"]
-        # batch= df[-1*self.conf.batch_size:] 
-        # yield batch["uid"],batch["itemid"],batch["rating"]
+        return samples
 
 
-        # pickle.dump([u_seqss,i_seqss,ratings], open(pickle_name, 'wb'),protocol=2) 
-    def prepare_dns(self,pool,mode="train", epoches_size=1,shuffle=True, fresh=False):  
-        # pickle_name = "tmp/samples_"+self.conf.dataset+"_" +mode+".pkl"
-        pickle_name = "tmp/samples_"+self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+    def getSeqOverAlltime(self,userid, itemid):   #does labeled data also do this?        
+        u_seqs,i_seqs=[],[]
+        for t in range(self.data["user_granularity"].min(),0):
+    
+            u_seqs.append(self.user_dict[userid].get(t,None))
+            i_seqs.append(self.item_dict[itemid].get(t,None))
+
+        u_seqss,i_seqss=[],[]
+        for t in range( self.data["user_granularity"].min() ,0- self.conf.user_windows_size):
+            u_seqss.append( u_seqs[t:t+self.conf.user_windows_size])
+            i_seqss.append( i_seqs[t:t+self.conf.user_windows_size])     
+        if self.conf.is_sparse:
+            return [i for i in map(getUserVector1, u_seqss)],[i for i in map(getItemVector1, i_seqss)]
+        else:              
+            return [i for i in map(self.getUserVector, u_seqss)],[i for i in map(self.getItemVector, i_seqss)]
+
+    def getSeqInTime(self,userid,itemid,t):
+        u_seqs,i_seqs=[],[]
+        for t in range(t-self.conf.user_windows_size,t):
+            u_seqs.append(self.user_dict[userid].get(t,None))
+            i_seqs.append(self.item_dict[itemid].get(t,None))
+        if self.conf.is_sparse:
+            return getUserVector1(u_seqs),getItemVector1(i_seqs)
+        else:
+
+            return self.getUserVector(u_seqs),self.getItemVector(i_seqs)
+
+    def prepare_dns(self,pool=None,mode="train", epoches_size=1,sess=None,model=None):          
+        df = self.data
+        samples=[]
+
+        for user in df["uid"].unique():
+
+            pos_items_time_dict=self.user_item_pos_rating_time_dict.get(user,{})   # null 
+            if len(pos_items_time_dict)==0:
+                continue
+
+            all_rating = model.predictionItems(sess,user)                           # todo delete the pos ones
+            exp_rating = np.exp(np.array(all_rating) *self.conf.temperature)
+            prob = exp_rating / np.sum(exp_rating)
+
+            neg = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
+            for  i,(pos,t) in enumerate(pos_items_time_dict.items()):
+
+                u_seqs,i_seqs=self.getSeqInTime(user,pos,t)
+                samples.append((u_seqs,i_seqs,1,user,pos))
+
+                neg_item_id = neg[i]
+                u_seqss,i_seqss= self.getSeqOverAlltime(user,neg_item_id)
+                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss))
+                index=np.argmax(predicted)
+                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
+ 
+        return samples
+
+
+    def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+
+        pickle_name = "tmp/samples_"+ ("dns" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
-            # print("laod the data %s"% pickle_name)
-            # print ("load %s over"% pickle_name )
-            u_seqss,i_seqss,ratingss,useridss,itemidss=pickle.load(open(pickle_name, 'rb'))
-
+            samples=pickle.load(open(pickle_name, 'rb'))
             gc.enable()
-            return u_seqss,i_seqss,ratingss,useridss,itemidss
-        else:         
-            df = self.data
-
-
-            for user in df["uid"].unique():
-
-                print("fuck here!!!")
-            samples=[]
-
-            if mode=="train":
-                start=df["user_granularity"].min()+self.conf.user_windows_size
-                end=0
-
-            else:
-                start=0
-                end=df["user_granularity"].max()+1
-
-            for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
-                print(t)
-                for index,row in df[df.user_granularity==t].iterrows():
-                    userid =row["uid"]
-                    itemid =row["itemid"]
-                    rating =row["rating"] # get the r_ijt
-                    item_seqs,user_seqs=[],[]
-                    for pre_t in range(t-self.conf.user_windows_size ,t):    
-                        user_seqs.append(self.user_dict[userid].get(pre_t,None))
-                        item_seqs.append(self.item_dict[itemid].get(pre_t,None))
-                    
-                    if mode=="train": #if :                
-                        null_user_seqs = len([e for e in user_seqs if e is None])
-                        if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
-                            samples.append((user_seqs,item_seqs,rating,userid,itemid))    
-                    else:
-                        samples.append((user_seqs,item_seqs,rating,userid,itemid))          
             
-        u_seqss, i_seqss, ratingss,useridss,itemidss=[],[],[],[],[]         
-        start=time.time()
-        
-        print("shuffle time spent %f"% (time.time()-start))
+        else:
+            if dns :
+                samples= self.prepare_dns(sess=sess,model=model,mode=mode, epoches_size=epoches_size)
+            else:
+                samples=self.prepare_uniform(mode=mode, epoches_size=epoches_size)
+            pickle.dump(samples, open(pickle_name, 'wb'),protocol=2)
+
+        if mode=="train" and shuffle:      
+
+            start=time.time()
+            samples =sklearn.utils.shuffle(samples) 
+            print("shuffle time spent %f"% (time.time()-start))
+
         n_batches= int(len(samples)/ self.conf.batch_size)
         print("%d batch"% n_batches)
-
                 
         for i in range(0,n_batches):
             start=time.time()
@@ -316,26 +304,34 @@ class DataHelper():
             batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
             #u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
             #i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
-            if mp:
-                u_seqs= pool.map(getUserVector1,[pairs[0] for pairs in batch])
-                i_seqs= pool.map(getItemVector1,[pairs[1] for pairs in batch])
-            else:
-                u_seqs= map(getUserVector1,[pairs[0] for pairs in batch])
-                i_seqs= map(getItemVector1,[pairs[1] for pairs in batch])
 
-            ratings=[pair[2] for pair in batch]
+            u_seqs=[pair[0] for pair in batch]
+
+            i_seqs=[pair[1] for pair in batch]
+            if self.conf.is_sparse:
+                if pool is not None:
+                    u_seqs=pool.map(sparse2dense, u_seqs)
+                    i_seqs=pool.map(sparse2dense, i_seqs)
+                else:
+                    u_seqs=[v for v in map(sparse2dense, u_seqs)]
+                    i_seqs=[v for v in map(sparse2dense, i_seqs)]
+
+            if self.conf.rating_flag:
+                ratings=[float(ii[2]) for ii in batch]
+            else:
+                ratings=[float(ii[2]>3.99) for ii in batch]
+
             userids=[pair[3] for pair in batch]
             itemids=[pair[4] for pair in batch]
-            u_seqss.extend(u_seqs)
-            i_seqss.extend(i_seqs)
-            ratingss.extend(ratings)
-            useridss.extend(userids)
-            itemidss.extend(itemids)
+
             # if i %10==0:
             #     print("processed %d lines"%i)
-            # print("spent %f"% (time.time()-start))
-        pickle.dump([u_seqss,i_seqss,ratingss,useridss,itemidss], open(pickle_name, 'wb'),protocol=2)
-        return u_seqss,i_seqss,ratingss,useridss,itemidss
+            # # print("spent %f"% (time.time()-start))
+
+            yield u_seqs,i_seqs,ratings,userids,itemids
+
+
+        
 
     def getUserVector(self,user_sets):
         u_seqs=[]
@@ -387,9 +383,8 @@ class DataHelper():
             results=np.append(results,se)
         # print (sess.run(discriminator.user_bias)[:10])
         mse=np.mean(results)
-
-
         return math.sqrt(mse)
+
     def evaluateRMSE(self,sess,model):
         results=np.array([])
         for u_seqss,i_seqss,ratingss,useridss,itemidss in self.getDataWithSeq(mode="test",rating_flag=True):
@@ -401,26 +396,18 @@ class DataHelper():
             results=np.append(results,se)
         mse=np.mean(results)
 
-
         return math.sqrt(mse)
     
     def getDataWithSeq(self,shuffle=True,mode="train",epoches=2,rating_flag=False):
-#        pool=Pool(cpu_count())
-#        u_seqs,i_seqs,ratings,userids,itemids=self.getBatch_prepare(pool,mode=mode, epoches_size=1)
-#        
-#        pos_index = [i for i,r in enumerate(ratingss) if r>3.99]
-#        neg_index = [i for i,r in enumerate(ratingss) if r<=3.99]        
-#        pos_batches = [(u_seqss[i],i_seqss[i],1) for i in pos_index]
-#        neg_batches = [(u_seqss[i],i_seqss[i],0) for i in neg_index]            
-#        batches = pos_batches +  neg_batches
 
-        try:     
+        if True:
+        # try:     
             if mp:    
                 pool= Pool(cpu_count())
             else:
                 pool=None
-            u_seqss,i_seqss,ratingss,useridss,itemidss=self.prepare_uniform(pool,mode=mode, epoches_size=1)
-            batches=[(x,y,z,w,v) for x,y,z,w,v in zip(u_seqss,i_seqss,ratingss,useridss,itemidss)]
+            samples=self.prepare_uniform(pool,mode=mode, epoches_size=1)
+            batches=samples
             for i in range(epoches):
                 if mode=="train" and shuffle:      
                     batches =sklearn.utils.shuffle(batches)
@@ -441,18 +428,14 @@ class DataHelper():
                     userids=[ii[3] for ii in batch]
                     itemids=[ii[4] for ii in batch]
                     yield u_seqs,i_seqs,ratings,userids,itemids
-        except Exception as e:
-            print(e)
-            # exit()
-            pool.close()
+        # except Exception as e:
+        #     print(e)
+        #     # exit()
+        #     pool.close()
         if mp:
             pool.close()
 
-    def getBatchUser(self,users):
-        n_batches= int(len(df)/ self.conf.batch_size)
-        for i in range(0,n_batches):
-            yield df[i*self.conf.batch_size:(i+1) * self.conf.batch_size]             
-        yield batch[-1*(n_batches% self.conf.batch_size):]
+
         
     def getTestFeedingData(self,userid, rerank_indexs):
         u_seqs=[]
@@ -465,53 +448,8 @@ class DataHelper():
                 i_seqs.append(self.item_dict[itemid].get(t,None))
             i_seqss.append(i_seqs)
         return self.getUserVector(u_seqs),[i for i in map(self.getItemVector, i_seqss)]
-    
-    def evaluate(self,sess,model,rerank=False):
-
-        # print(pos_items.to_dict())
-        # for user_batch in self.getBatchUser():
-        results=[]
-        for user_id in self.users:   # pool.map
-            # all_rating= sess.run(mfmodel.all_rating,feed_dict={mfmodel.u: user_id})  #[user_id]
-            all_rating= np.random.random( len(self.items)+1)  #[user_id]
-            if rerank:
-                candiate_index = self.items - self.pos_items.get(user_id, set())
-                scores =[ (index,all_rating[index]) for index in candiate_index ]
-                sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
-
-                rerank_indexs= ([ii[0] for ii in sortedScores[:self.conf.re_rank_list_length]])
-                u_seqs,i_seqss=self.getTestFeedingData(user_id, rerank_indexs)
-                # print(np.array(u_seqs).shape)
-                # print(np.array(i_seqss).shape)
-
-                
-                # feed_dict={MFRNNmodel.u:user_id, MFRNNmodel.i, MFRNNmodel.useqs:u_seqs , MFRNNmodel.i_seqs:i_seqs}
-                # scores = sess.run(rnn_MF_model.all_rating,feed_dict=feed_dict) 
-                scores=np.random.random( len(rerank_indexs))
-                sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-                rank_list= [1 if ii[0] in self.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores]
-            else:
-                pass
-
-            result =getResult(rank_list)
-            print(result)
-            results.append(result)
-        print (np.mean(np.array(results),0))
   
-    def evaluatebySavedModel(self,checkpoint):
-        users_set=self.test_users
-        # users_set=self.users
-        
-        pool=Pool(cpu_count())
-        results= pool.map(getScore2,zip(list(users_set), itertools.repeat(checkpoint) ))
-        # except:
-            # pool.close()
-        # results= [ i for i in map(getScore1,zip(list(users_set)[:20], itertools.repeat(checkpoint) ))]
-        # print(results)
-        return np.mean(np.array(results),0)
-        
- 
-
+  
     def evaluateMultiProcess(self,sess,model,mp=False):
         users_set=self.test_users
         # print("evaluate %d users" %len(users_set))
@@ -525,94 +463,10 @@ class DataHelper():
                 # pool.close()
         else:
             results= [ i for i in map(getScore1,zip(users_set, itertools.repeat(sess),itertools.repeat(model) ))]
-        # print("calculate")
-        # print(results)
-        # results = []
-        # for user_id in self.users:
-
-        #     # result=getScore1(self.user_id,sess,model)
-        #     # results.append(result)
-        #     result= pool.apply_async(getScore1,args=(user_id,sess,model, self.items,self.pos_items,self.test_pos_items,self.conf.re_rank_list_length,self.conf.user_windows_size, self.user_dict,self.item_dict)).get()
-        #     # result= pool.apply_async(self.getScore1,args=(user_id,sess,model)).get()
-        #     results.append(result)
-        # # pool.close()
-        # # pool.join()
-
-        
-        # results= [ i for i in map(getScore1,zip(self.users, itertools.repeat(sess),itertools.repeat(model) ))]
-
-
-        # from functools import partial
-        # getScore_this_call = partial(self.getScore1,sess,model )
-        # print("function build over")
-        # print(getScore_this_call)
-        # results= pool.map(getScore_this_call,self.users)
-
-        # from multiprocessing.pool import ThreadPool 
-        # pool = ThreadPool(cpu_count()) 
-        # args=[(i,j,k) for i,j,k in zip(self.users, itertools.repeat(sess),itertools.repeat(model) )] 
-        # print(args)
-        # requests = threadpool.makeRequests(getScore1,args)  
-        # results=[pool.putRequest(req) for req in requests]  
-        # print(results)
-        # pool.wait()  
-        # results= pool.map(getScore1,zip(users, itertools.repeat(sess),itertools.repeat(model) ))
 
 
         return np.mean(np.array(results),0)
-        
 
-    def getScore1(self,args):
-        rerank=True
-        (user_id,sess,model)=args
-
-        if model is None:
-            print ("there is no model, it is random guessing instead!")
-            all_rating= np.random.random( len(self.items)+1)  #[user_id]
-        # all_rating = model.predictionItems(sess,user_id)[0]#[user_id] MF generated all rating to pick the highest K candidates.
-        else:
-            all_rating = model.predictionItems(sess,user_id)
-           
-        if not rerank:
-            sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
-            # print (sortedScores[:10])
-            # print(self.test_pos_items.get(user_id,None))
-            rank_list= [1 if ii[0] in self.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-        else:
-            sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
-            # print (sortedScores[:10])
-            # print(self.test_pos_items.get(user_id,None))
-            rank_list= [1 if ii[0] in self.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-            result = getResult(rank_list)
-            print(rank_list)
-            print("prerank score: %s"%(str(results)))
-
-            candiate_index = self.items - self.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
-            
-            scores =[ (index,all_rating[index]) for index in candiate_index ]
-            sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
-
-            rerank_indexs= ([ii[0] for ii in sortedScores[:self.conf.re_rank_list_length]])
-            u_seqs,i_seqss=self.getTestFeedingData(user_id, rerank_indexs)
-
-            # print(np.array(u_seqs).shape)
-            # print(np.array(i_seqss).shape)
-           
-            
-            if model is None:
-                print ("there is no model, it is random guessing instead!")
-                scores=np.random.random( len(rerank_indexs))
-            else:
-                scores = model.prediction(sess, [u_seqs] * self.conf.re_rank_list_length, i_seqss, [user_id] * self.conf.re_rank_list_length, rerank_indexs)
-            # 
-            sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-            rank_list= [1 if ii[0] in self.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-        result = getResult(rank_list)
-        print(rank_list)
-        print("rerank score: %s"%(str(results)))
-        return result
 
 
 flagFactory=Singleton()
@@ -680,55 +534,7 @@ def getScore1(args):
         # print(rank_list)
         # print("rerank score: %s"%(str(result-pre_result)))
         return pre_result,result
-# def getScore2(args):
-#         rerank=False
-#         (user_id,checkpoint_dir)=args
-        
-#         sess = tf.InteractiveSession()    
-#         tf.global_variables_initializer().run()
-#         saver = tf.train.Saver(max_to_keep=40) 
-#         ckpt = tf.train.get_checkpoint_state(checkpoint_dir)  
-#         if ckpt and ckpt.model_checkpoint_path:  
-#             # start=time.time()
-#             saver.restore(sess, ckpt.model_checkpoint_path)
-#             # print ("load checkpoint %.3f"%(time.time()-start) )
-#         else:
-#             print("load model error")
-#         # print ("load checkpoint %.3f"%(time.time()-start) )
-#         print("saved model")
-#         print(sess.run(model.user_embeddings)[0])
-#         all_rating = model.predictionItems(sess,user_id)
 
-#         if not rerank:
-#             sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
-#             # print (sortedScores[:10])
-#             # print(helper.test_pos_items.get(user_id,None))
-#             rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-#         else:
-#             candiate_index = helper.items - helper.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
-            
-#             scores =[ (index,all_rating[index]) for index in candiate_index ]
-#             sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
-
-#             rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
-#             u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
-
-#             # print(np.array(u_seqs).shape)
-#             # print(np.array(i_seqss).shape)
-           
-            
-#             if model is None:
-#                 scores=np.random.random( len(rerank_indexs))
-#             else:
-#                 scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-#             # 
-#             sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-#             rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-#         result = getResult(rank_list)
-
-#         return result
 def sparse2dense(sparse):
     return sparse.toarray()
 

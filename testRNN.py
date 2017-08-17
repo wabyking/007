@@ -86,8 +86,11 @@ saver = tf.train.Saver(max_to_keep=40)
 
 # model.restoreModel("mf.model",save_type="mf")
 tf.global_variables_initializer().run()
-# checkpoint_filepath= "model/joint-25-0.28000.ckpt"
-# saver.restore(sess,checkpoint_filepath)
+checkpoint_filepath= "model/joint-25-0.28000.ckpt"
+saver.restore(sess,checkpoint_filepath)
+
+
+
 # model.saveModel(sess,"rnn.model",save_type="rnn")
 scores=helper.evaluateMultiProcess(sess,model)
 if FLAGS.model_type=="mf":
@@ -106,7 +109,8 @@ def main(checkpoint_dir="model/"):
         rnn_losses=[]
         mf_losses=[]
         joint_losses=[]
-        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getDataWithSeq(rating_flag=False)):
+        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=FLAGS.dns,sess=sess,model=model,fresh=False)):
+
 
             # feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
             # _, model_loss,l2_loss,pre_logits = sess.run([discriminator.d_updates,discriminator.point_loss,discriminator.l2_loss,discriminator.pre_logits],feed_dict=feed_dict)    

@@ -203,7 +203,17 @@ class RNNGenerator(object):
             pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)
             self.pretrain_updates = pretrain_opt.apply_gradients(zips(clipped_gradients,tavrs))
         self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
-        
+
+
+
+        self.reward = tf.placeholder(tf.float32)
+        self.gan_loss=-tf.reduce_mean(tf.log(self.pre_joint_logits) * self.reward)
+        if self.model_type!="rnn":
+            self.gan_loss+= self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        if self.model_type!="mf":
+            self.gan_loss+= self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+
+        self.gan_update = pretrain_opt.minimize(self.gan_loss)     # todo : use different opt
 #        self.i_prob = tf.gather(
 #            tf.reshape(tf.nn.softmax(tf.reshape(self.all_logits, [1, -1])), [-1]),
 #            self.i)
@@ -234,6 +244,20 @@ class RNNGenerator(object):
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
 
         return outputs
+
+
+    def gan_feadback(self,sess, samples,reward):
+        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+        _,loss = sess.run([self.gan_update , self.gan_loss], feed_dict = {self.user_sequence: u_seq, 
+                            self.item_sequence: i_seq,  self.u: u, self.i: i ,self.reward:reward})
+        return
+
+    def getRewards(self,sess, samples):
+        # print([item for item in (sample[i] for i in range(4) for sample in samples )])
+        print
+        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+
+        return self.prediction(sess,u_seq,i_seq,u,i) 
 
 
     def saveMFModel(self, sess, filename):

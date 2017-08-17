@@ -84,57 +84,64 @@ for sess,model,init,saver in zip([sess1,sess2],[gen,dis],[init1,init2],[saver1,s
     print(scores)
 
 
-exit()
 def main(checkpoint_dir="model/"):
     global best_p5
     for epoch in range(1000):
 
-        # for i,(uid,itemid,rating) in enumerate(helper.getBatch4MF()):
-        rnn_losses=[]
-        mf_losses=[]
-        joint_losses=[]
-        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.prepare(rating_flag=False)):
+        if epoch > 0:
+            for d_epoch in range(10):
 
-            # feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
-            # _, model_loss,l2_loss,pre_logits = sess.run([discriminator.d_updates,discriminator.point_loss,discriminator.l2_loss,discriminator.pre_logits],feed_dict=feed_dict)    
+                # for i,(uid,itemid,rating) in enumerate(helper.getBatch4MF()):
+                rnn_losses,mf_losses,joint_losses=[],[],[]
+                for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=True,sess=sess1,model=gen,fresh=False)):
 
-            # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
-            # print(u_seqs,i_seqs,rating,uid,itemid)
-            _,loss_mf,loss_rnn,joint_loss= model.pretrain_step(sess,  rating, uid, itemid,u_seqs,i_seqs)
-            rnn_losses.append(loss_rnn)
-            mf_losses.append(loss_mf)
-            joint_losses.append(joint_loss)
+                    _,loss_mf,loss_rnn,joint_loss= dis.pretrain_step(sess2,  rating, uid, itemid,u_seqs,i_seqs)
+                    rnn_losses.append(loss_rnn)
+                    mf_losses.append(loss_mf)
+                    joint_losses.append(joint_loss)
 
-            # print( "MF loss: %.5f  RNN loss : %.5f"%(loss_mf,loss_rnn))
-            # print(l)
-            # print(sess.run(model.user_embeddings)[0])
-            # print(  "loss %f  logits %s" %(l,str(pre_logits_MF)))
-        # start=time.time()
-        # print("%d epoch" % epoch)
-        # print(sess.run(model.user_embeddings))
-        # print(sess.run(model.item_embeddings))
-        # print(sess.run(model.item_bias))
-        # print(sess.run(model.user_bias))
-       	# print(i)
-        print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
-        scores= (helper.evaluateMultiProcess(sess,model))
-        # print(helper.evaluateRMSE(sess,model))
-        print(scores)
-        if FLAGS.model_type=="mf":
-            curentt_p5_score=scores[1]
-        else:
-            curentt_p5_score=scores[1][1]
+                print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
+                scores= (helper.evaluateMultiProcess(sess2,dis))
+                # print(helper.evaluateRMSE(sess,model))
+                print(scores)
+                if FLAGS.model_type=="mf":
+                    curentt_p5_score=scores[1]
+                else:
+                    curentt_p5_score=scores[1][1]
 
-        if curentt_p5_score >best_p5:        	
-            best_p5=curentt_p5_score
-            saver.save(sess, checkpoint_dir + '%s-%d-%.5f.ckpt'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5))
-            mf_model = '%s-%d-%.5f.pkl'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5)
-            model.saveMFModel(sess,mf_model)
-            print(best_p5)
+                if curentt_p5_score >best_p5:        	
+                    best_p5=curentt_p5_score
+                    saver.save(sess, checkpoint_dir + '%s-%d-%.5f.ckpt'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5))
+                    mf_model = '%s-%d-%.5f.pkl'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5)
+                    # model.saveMFModel(sess,mf_model)
+                    print(best_p5)
 
-        # print("non multiprocess evalution have spent %f s"%(time.time()-start) )
+                # Train G
+        for g_epoch in range(50):  # 50
+            for user in helper.data["uid"].unique(): 
+
+                pos_items_time_dict=helper.user_item_pos_rating_time_dict.get(user,{})
+                if len(pos_items_time_dict)==0:                   # todo  not do this
+                    continue
+                all_rating = gen.predictionItems(sess1,user)                           # todo delete the pos ones
+                exp_rating = np.exp(np.array(all_rating) *helper.conf.temperature)
+                prob = exp_rating / np.sum(exp_rating)
+
+                neg = np.random.choice(np.arange(helper.i_cnt), size=len(pos_items_time_dict), p=prob)
+                samples=[]
+                for  i,(pos,t) in enumerate(pos_items_time_dict.items()):                # gan_k guding
 
 
-             
+                    neg_item_id = neg[i]
+                    u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
+                    predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss))
+                    index=np.argmax(predicted)
+                    samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
+                
+                rewards= dis.getRewards(sess2, samples)
+
+
+                gen.gan_feadback(sess1,samples, rewards)
+
 if __name__== "__main__":
 	main()

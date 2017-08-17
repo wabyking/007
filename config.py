@@ -38,12 +38,16 @@ class Singleton(object):
 		flags.DEFINE_float("learning_rate", 0.01, "Batch size of data while training")
 		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
 		flags.DEFINE_float("lamda", 0.1, "Batch size of data while training")
+		flags.DEFINE_float("temperature", 1, "Batch size of data while training")
 
 		flags.DEFINE_float("momentum", 1, "Batch size of data while training")
 
 		flags.DEFINE_integer("threshold", 300, "Erase the users if the number of rating less than threshold")
 		flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
 		flags.DEFINE_boolean("pretrained", False, "Test accuracy")
+		flags.DEFINE_boolean("is_sparse", False, "Test accuracy")
+		flags.DEFINE_boolean("rating_flag", False, "Test accuracy")
+		flags.DEFINE_boolean("dns", False, "Test accuracy")
 		FLAGS= flags.FLAGS
 		train_split_data={"moviesLen_100k": FLAGS.moviesLen_100k_split_data , "netflix_6_mouth": FLAGS.netflix_6_mouth_split_data }
 		FLAGS.split_data=train_split_data.get(flags.FLAGS.dataset,0)
