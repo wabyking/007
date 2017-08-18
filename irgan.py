@@ -89,7 +89,7 @@ def main(checkpoint_dir="model/"):
     for epoch in range(1000):
 
         if epoch > 0:
-            for d_epoch in range(1):
+            for d_epoch in range(helper.conf.d_epoch_size):
 
                 # for i,(uid,itemid,rating) in enumerate(helper.getBatch4MF()):
                 rnn_losses,mf_losses,joint_losses=[],[],[]
@@ -118,7 +118,7 @@ def main(checkpoint_dir="model/"):
 
                 # Train G
 
-        for g_epoch in range(1):  # 50
+        for g_epoch in range(helper.conf.g_epoch_size):  # 50
             for user in helper.train["uid"].unique(): # train ?
 
 #                pos_items_time_dict=helper.user_item_pos_rating_time_dict.get(user,{})
@@ -136,11 +136,11 @@ def main(checkpoint_dir="model/"):
                     predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
                     index=np.argmax(predicted)
                     samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
-                
-                rewards= dis.getRewards(sess2, samples)
+
+                rewards= dis.getRewards(sess2, samples,sparse=True)
 
 
-                gen.gan_feadback(sess1,samples, rewards)
+                print("gan loss %.5f"%gen.gan_feadback(sess1,samples, rewards))
             print("have processed %d epoch of G" %g_epoch)
 
 if __name__== "__main__":

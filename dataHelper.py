@@ -16,6 +16,7 @@ from config import Singleton
 import sklearn
 import itertools
 import tensorflow as tf
+import random
 # import sys
 # sys.setrecursionlimit(5000)
 
@@ -282,7 +283,12 @@ class DataHelper():
         if mode=="train" and shuffle:      
 
             start=time.time()
-            samples =sklearn.utils.shuffle(samples) 
+            # samples =sklearn.utils.shuffle(samples) 
+            print (samples)
+            random.shuffle(samples)
+            print (samples)
+            # shuffle_index= sklearn.utils.shuffle(np.arange(len(samples)))
+            # samples= np.array(samples)[shuffle_index].tolist()
             print("shuffle time spent %f"% (time.time()-start))
 
         n_batches= int(len(samples)/ self.conf.batch_size)

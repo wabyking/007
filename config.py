@@ -22,7 +22,7 @@ class Singleton(object):
 		flags.DEFINE_string("train_file_name", "ratings.csv", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("work_dir", "online_model", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_integer("export_version", "80", "Comma-separated list of hostname:port pairs")
-		flags.DEFINE_integer("subset_size", 2000, "Comma-separated list of hostname:port pairs")
+		flags.DEFINE_integer("subset_size", 100, "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("moviesLen_100k_split_data", "1998-03-08", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("netflix_6_mouth_split_data", "2005-12-01", "Comma-separated list of hostname:port pairs")
 
@@ -36,7 +36,12 @@ class Singleton(object):
 		flags.DEFINE_integer("n_epochs", 10, "Batch size of data while training")
 		flags.DEFINE_integer("test_granularity_count", 2, "Batch size of data while training")
 		flags.DEFINE_integer("mf_embedding_dim", 10, "Batch size of data while training")
-		flags.DEFINE_integer("rnn_embedding_dim", 10, "Batch size of data while training")        
+		flags.DEFINE_integer("rnn_embedding_dim", 10, "Batch size of data while training")  
+		flags.DEFINE_integer("g_epoch_size", 1, "Batch size of data while training")  
+		flags.DEFINE_integer("d_epoch_size", 1, "Batch size of data while training")  
+
+
+
 		flags.DEFINE_float("learning_rate", 0.01, "Batch size of data while training")
 		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
 		flags.DEFINE_float("lamda", 0.1, "Batch size of data while training")

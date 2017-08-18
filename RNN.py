@@ -14,6 +14,7 @@ from __future__ import division
 
 import tensorflow as tf
 import pickle
+import numpy as np
 
 class RNNGenerator(object):
     def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn"):
@@ -207,7 +208,7 @@ class RNNGenerator(object):
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.gan_loss=-tf.reduce_mean(tf.log(self.pre_joint_logits) * self.reward)
+        self.gan_loss=-tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward)
         if self.model_type!="rnn":
             self.gan_loss+= self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
         if self.model_type!="mf":
@@ -249,15 +250,18 @@ class RNNGenerator(object):
 
 
     def gan_feadback(self,sess, samples,reward):
-        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
+        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
+
         _,loss = sess.run([self.gan_update , self.gan_loss], feed_dict = {self.user_sequence: u_seq, 
                             self.item_sequence: i_seq,  self.u: u, self.i: i ,self.reward:reward})
-        return
+        return loss
 
-    def getRewards(self,sess, samples):
+    def getRewards(self,sess, samples,sparse=False):
         # print([item for item in (sample[i] for i in range(4) for sample in samples )])
-        
-        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+
+        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
+        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
 
         return self.prediction(sess,u_seq,i_seq,u,i) 
 
