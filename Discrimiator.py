@@ -16,8 +16,8 @@ import tensorflow as tf
 import pickle
 import numpy as np
 
-class RNNGenerator(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False):
+class Dis(object):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False, update_rule="adam"):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -76,6 +76,7 @@ class RNNGenerator(object):
 
         self.paras_rnn=[]
         self.model_type=model_type
+        self.update_rule = update_rule
     def _init_MF(self):
         with tf.variable_scope('MF'):
             if self.MF_paras is None:
@@ -102,7 +103,7 @@ class RNNGenerator(object):
 
     def _decode_lstm(self, h_usr, h_itm, reuse=False):
         if False:
-            with tf.variable_scope('rating', reuse=reuse):
+            with tf.variable_scope('D_rating', reuse=reuse):
                 w_usr = tf.get_variable('w_usr', [self.H, self.H], initializer=self.weight_initializer)
                 b_usr = tf.get_variable('b_usr', [self.H], initializer=self.const_initializer)
                 w_itm = tf.get_variable('w_itm', [self.H, self.H], initializer=self.weight_initializer)
@@ -117,11 +118,11 @@ class RNNGenerator(object):
                 return out_preds
         else:
             out_preds = tf.reduce_sum(tf.multiply(h_usr, h_itm), 1) 
-            print("do not use a fully-connectted layer by the outputing vector of LSTM")  
+            print("Do not use a fully-connectted layer at the time of output decoding.")  
             return out_preds
             
     def _get_initial_lstm(self, batch_size):
-        with tf.variable_scope('initial_lstm'):                        
+        with tf.variable_scope('D_initial_lstm'):                        
             c_itm = tf.zeros([batch_size, self.H], tf.float32)
             h_itm = tf.zeros([batch_size, self.H], tf.float32)
             c_usr = tf.zeros([batch_size, self.H], tf.float32)
@@ -130,7 +131,7 @@ class RNNGenerator(object):
             return c_itm, h_itm, c_usr, h_usr
 
     def _item_embedding(self, inputs, reuse=False):
-        with tf.variable_scope('item_embedding', reuse=reuse):
+        with tf.variable_scope('D_item_embedding', reuse=reuse):
             w = tf.get_variable('w', [self.V_U, self.H], initializer=self.emb_initializer)           
             x_flat = tf.reshape(inputs, [-1, self.V_U]) #(N * T, U)       
             x = tf.matmul(x_flat, w) #(N * T, H)
@@ -139,7 +140,7 @@ class RNNGenerator(object):
             return x
         
     def _user_embedding(self, inputs, reuse=False):
-        with tf.variable_scope('user_embedding', reuse=reuse):
+        with tf.variable_scope('D_user_embedding', reuse=reuse):
            w = tf.get_variable('w', [self.V_M, self.H], initializer=self.emb_initializer)           
            x_flat = tf.reshape(inputs, [-1, self.V_M]) #(N * T, M)       
            x = tf.matmul(x_flat, w) #(N * T, H)
@@ -161,19 +162,22 @@ class RNNGenerator(object):
         self._init_MF()
         
         for t in range(self.T):
-            with tf.variable_scope('itm_lstm', reuse=(t!=0)):
+            with tf.variable_scope('D_itm_lstm', reuse=(t!=0)):
                 _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])            
-            with tf.variable_scope('usr-lstm', reuse=(t!=0)):
+            with tf.variable_scope('D_usr-lstm', reuse=(t!=0)):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
-        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+#        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+#        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
+#        tv = tf.trainable_variables()
+#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
+
         self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
-        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) + RNN_Regularizer
+        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) #+ RNN_Regularizer
         self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) + MF_Regularizer
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+ MF_Regularizer
         
         self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
         self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) 
@@ -200,12 +204,21 @@ class RNNGenerator(object):
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward) + MF_Regularizer + RNN_Regularizer             
+        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward) #+ MF_Regularizer + RNN_Regularizer             
         
         pg_grads = tf.gradients(self.pg_loss, tf.trainable_variables())               
         pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
         self.pg_updates = optimizer.apply_gradients(grads_and_vars=pg_grads_and_vars)                     
-        
+    
+    def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
+        if user_sequence is not None:
+            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
+                            self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
+        else:
+            outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
+
+        return outputs
+    
     def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
         if sparse:
             user_sequence,item_sequence=[ii.toarray() for ii in user_sequence],[ii.toarray() for ii in item_sequence]
@@ -218,12 +231,29 @@ class RNNGenerator(object):
         return outputs
              
 
-    def getRewards(self,sess, samples,sparse=False):
+    def getRewards(self,sess,gen, samples,sparse=False):
         u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
         u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
+        rating = [ sample[5]  for sample in samples ]
         
-        reward_logits = self.prediction(sess,u_seq,i_seq,u,i)        
-        return 2 * (tf.sigmoid(reward_logits) - 0.5)    
+        indices = [j for j,v in enumerate([sample[4] for sample in samples]) if v == 1]                
+        
+        labeled_rewards = np.zeros(len(samples))
+        
+        if len(indices) > 0:
+            _,loss_mf,loss_rnn,joint_loss,joint_loss_list = gen.pretrain_step(sess, [rating[ind] for ind in indices], 
+                                                          [u[ind] for ind in indices], 
+                                                          [i[ind] for ind in indices], 
+                                                          [u_seq[ind] for ind in indices], 
+                                                          [i_seq[ind] for ind in indices])
+            for ind,v in enumerate(joint_loss_list):
+                labeled_rewards[indices[ind]] = v
+            
+        unlabeled_rewards = self.prediction(sess,u_seq,i_seq,u,i)
+        
+        rewards = labeled_rewards + unlabeled_rewards
+        
+        return 2 * (tf.sigmoid(rewards) - 0.5)    
 
 
     def saveMFModel(self, sess, filename):

@@ -14,7 +14,7 @@ class Singleton(object):
  
 		flags.DEFINE_string("dataset", "moviesLen_100k", "Comma-separated list of hostname:port pairs")
 		flags.DEFINE_string("model_type", "joint", "Comma-separated list of hostname:port pairs")
-		flags.DEFINE_string("pretrained_model", "mf0.12.pkl", "Comma-separated list of hostname:port pairs")
+		flags.DEFINE_string("pretrained_model", "mf-25-0.12267.pkl", "Comma-separated list of hostname:port pairs")
 		# flags.DEFINE_string("model_type", "mf", "Comma-separated list of hostname:port pairs")
 		# flags.DEFINE_string("model_type", "joint", "Comma-separated list of hostname:port pairs")
 
@@ -52,7 +52,7 @@ class Singleton(object):
 
 		flags.DEFINE_integer("threshold", 300, "Erase the users if the number of rating less than threshold")
 		flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
-		flags.DEFINE_boolean("pretrained", False, "Test accuracy")
+		flags.DEFINE_boolean("pretrained", True, "Test accuracy")
 		flags.DEFINE_boolean("is_sparse", True, "Test accuracy")
 		flags.DEFINE_boolean("rating_flag", False, "Test accuracy")
 		flags.DEFINE_boolean("dns", False, "Test accuracy")

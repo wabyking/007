@@ -14,10 +14,9 @@ from __future__ import division
 
 import tensorflow as tf
 import pickle
-import numpy as np
 
-class Generator(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False):
+class Gen(object):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False,update_rule='adam'):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -76,6 +75,7 @@ class Generator(object):
 
         self.paras_rnn=[]
         self.model_type=model_type
+        self.update_rule = update_rule
         
     def _init_MF(self):
         with tf.variable_scope('MF'):
@@ -103,7 +103,7 @@ class Generator(object):
 
     def _decode_lstm(self, h_usr, h_itm, reuse=False):
         if False:
-            with tf.variable_scope('rating', reuse=reuse):
+            with tf.variable_scope('G_rating', reuse=reuse):
                 w_usr = tf.get_variable('w_usr', [self.H, self.H], initializer=self.weight_initializer)
                 b_usr = tf.get_variable('b_usr', [self.H], initializer=self.const_initializer)
                 w_itm = tf.get_variable('w_itm', [self.H, self.H], initializer=self.weight_initializer)
@@ -122,7 +122,7 @@ class Generator(object):
             return out_preds
             
     def _get_initial_lstm(self, batch_size):
-        with tf.variable_scope('initial_lstm'):                        
+        with tf.variable_scope('G_initial_lstm'):                        
             c_itm = tf.zeros([batch_size, self.H], tf.float32)
             h_itm = tf.zeros([batch_size, self.H], tf.float32)
             c_usr = tf.zeros([batch_size, self.H], tf.float32)
@@ -131,7 +131,7 @@ class Generator(object):
             return c_itm, h_itm, c_usr, h_usr
 
     def _item_embedding(self, inputs, reuse=False):
-        with tf.variable_scope('item_embedding', reuse=reuse):
+        with tf.variable_scope('G_item_embedding', reuse=reuse):
             w = tf.get_variable('w', [self.V_U, self.H], initializer=self.emb_initializer)           
             x_flat = tf.reshape(inputs, [-1, self.V_U]) #(N * T, U)       
             x = tf.matmul(x_flat, w) #(N * T, H)
@@ -140,7 +140,7 @@ class Generator(object):
             return x
         
     def _user_embedding(self, inputs, reuse=False):
-        with tf.variable_scope('user_embedding', reuse=reuse):
+        with tf.variable_scope('G_user_embedding', reuse=reuse):
            w = tf.get_variable('w', [self.V_M, self.H], initializer=self.emb_initializer)           
            x_flat = tf.reshape(inputs, [-1, self.V_M]) #(N * T, M)       
            x = tf.matmul(x_flat, w) #(N * T, H)
@@ -162,9 +162,9 @@ class Generator(object):
         self._init_MF()
         
         for t in range(self.T):
-            with tf.variable_scope('itm_lstm', reuse=(t!=0)):
+            with tf.variable_scope('G_itm_lstm', reuse=(t!=0)):
                 _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])            
-            with tf.variable_scope('usr-lstm', reuse=(t!=0)):
+            with tf.variable_scope('G_usr-lstm', reuse=(t!=0)):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
@@ -177,7 +177,10 @@ class Generator(object):
         self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) + MF_Regularizer
         
         self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
-        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) 
+        
+        self.joint_loss_list = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)
+        
+        self.joint_loss = tf.reduce_mean(self.joint_loss_list) 
         
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
@@ -209,7 +212,7 @@ class Generator(object):
          
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
-            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
+            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss, self.joint_loss_list ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
