@@ -117,8 +117,8 @@ def main(checkpoint_dir="model/"):
 
             # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
             # print(u_seqs,i_seqs,rating,uid,itemid)
-            print(np.array(i_seqs).shape)
- 
+   
+
             _,loss_mf,loss_rnn,joint_loss= model.pretrain_step(sess,  rating, uid, itemid,u_seqs,i_seqs)
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
