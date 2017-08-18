@@ -74,14 +74,14 @@ for sess,model,init,saver in zip([sess1,sess2],[gen,dis],[init1,init2],[saver1,s
     sess.run(init)
     
 
-    # checkpoint_filepath= "model/joint-25-0.28000.ckpt"
-    # saver.restore(sess,checkpoint_filepath)
-    # scores=helper.evaluateMultiProcess(sess,model)
-    # if FLAGS.model_type=="mf":
-    #     best_p5=scores[1]
-    # else:
-    #     best_p5=scores[1][1]
-    # print(scores)
+    checkpoint_filepath= "model/joint-25-0.24133.ckpt"
+    saver.restore(sess,checkpoint_filepath)
+    scores=helper.evaluateMultiProcess(sess,model)
+    if FLAGS.model_type=="mf":
+        best_p5=scores[1]
+    else:
+        best_p5=scores[1][1]
+    print(scores)
 
 
 def main(checkpoint_dir="model/"):
@@ -130,12 +130,16 @@ def main(checkpoint_dir="model/"):
 
                 neg = np.random.choice(np.arange(helper.i_cnt), size=helper.conf.gan_k, p=prob)
                 samples=[]
-                for  neg_item_id in neg:               
-                    u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
+                for  neg_item_id in neg:     
+                    if helper.conf.lastone:          
+                        u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
 
-                    predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
-                    index=np.argmax(predicted)
-                    samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
+                        predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
+                        index=np.argmax(predicted)
+                        samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
+                    else:
+                        u_seqs,i_seqs=helper.getSeqInTime(user,neg_item_id,0)
+                        samples.append((u_seqs,i_seqs,user,neg_item_id ))
 
                 rewards= dis.getRewards(sess2, samples,sparse=True)
 

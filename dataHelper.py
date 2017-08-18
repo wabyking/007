@@ -10,7 +10,7 @@ from multiprocessing import Pool
 from multiprocessing import freeze_support
 # from pathos.multiprocessing import ProcessingPool as Pool
 from multiprocessing import cpu_count
-from scipy.sparse import csr_matrix,csr_matrix
+from scipy.sparse import csr_matrix
 import math
 from config import Singleton
 import sklearn
@@ -284,9 +284,9 @@ class DataHelper():
 
             start=time.time()
             # samples =sklearn.utils.shuffle(samples) 
-            print (samples)
+
             random.shuffle(samples)
-            print (samples)
+
             # shuffle_index= sklearn.utils.shuffle(np.arange(len(samples)))
             # samples= np.array(samples)[shuffle_index].tolist()
             print("shuffle time spent %f"% (time.time()-start))

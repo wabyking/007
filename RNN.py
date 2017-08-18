@@ -17,7 +17,7 @@ import pickle
 import numpy as np
 
 class RNNGenerator(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn"):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -42,8 +42,26 @@ class RNNGenerator(object):
 
         # Place holder for features and captions
         
-        self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
-        self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])        
+        if use_sparse_tensor:
+            self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
+            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])
+
+            self.user_indices = tf.placeholder(tf.int64)
+            self.user_shape = tf.placeholder(tf.int64)
+            self.user_values = tf.placeholder(tf.float64)
+            user_sparse_tensor = tf.SparseTensor(user_indices, user_shape, user_values)
+            self.user_sequence = tf.sparse_tensor_to_dense(user_sparse_tensor)
+
+            self.item_indices = tf.placeholder(tf.int64)
+            self.item_shape = tf.placeholder(tf.int64)
+            self.item_values = tf.placeholder(tf.float64)
+            item_sparse_tensor = tf.SparseTensor(item_indices, item_shape, item_values)
+            self.item_sequence = tf.sparse_tensor_to_dense(item_sparse_tensor)
+            
+        else:
+            self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
+            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])   
+
         self.rating = tf.placeholder(tf.float32, [None,])
                         
         self.learning_rate = learning_rate
