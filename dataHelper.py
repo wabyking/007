@@ -91,7 +91,7 @@ class DataHelper():
 
         # df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(1970,1,1)).dt.days
         # df["days"]=df["days"] -df["days"].min()
-        y,m,d =    (int(i) for i in self.conf.split_data.split("-"))
+        y,m,d = (int(i) for i in self.conf.split_data.split("-"))
 
         df["days"] = (pd.to_datetime(df["date"]) -pd.datetime(y,m,d )).dt.days
 
@@ -103,14 +103,12 @@ class DataHelper():
         
         
 
-        if self.conf.threshold > 0:        
+        if self.conf.threshold > 0: # remove the users while the rating of them is lower than threshold
             counts_df = pd.DataFrame(df.groupby('uid').size().rename('counts'))
-
             users = set(counts_df[counts_df.counts>self.conf.threshold].index)
-
             df = df[df.uid.isin(users)]
 
- 
+#       re-arrange the user and item index from zero     
         df['u_original'] = df['uid'].astype('category')
         df['i_original'] = df['itemid'].astype('category')
         df['uid'] = df['u_original'].cat.codes
@@ -129,6 +127,7 @@ class DataHelper():
             # print (group[group.user_granularity==user_granularity])
             user_dict[uid][user_granularity]= group[group.user_granularity==user_granularity][["itemid","rating"]]
         return len(group["user_granularity"].unique())
+    
     def item_windows_apply(self,group,item_dict):
         itemid=(int(group["itemid"].mode()))
         # user_dict[uid]= len(group["days"].unique())
@@ -138,7 +137,6 @@ class DataHelper():
             item_dict[itemid][item_granularity]= group[group.item_granularity==item_granularity][["uid","rating"]]
             # print (item_dict[itemid][item_granularity])
         return len(group["item_granularity"].unique())
-
             
     # @log_time_delta
     def getdicts(self):
@@ -168,12 +166,11 @@ class DataHelper():
         if mode=="train":
             start=df["user_granularity"].min()+self.conf.user_windows_size
             end=0
-
         else:
             start=0
             end=df["user_granularity"].max()+1
 
-        for t in range(start,end): # because  item_windows_size== user_windows_size and user_delta ==item_delta
+        for t in range(start,end): # because item_windows_size== user_windows_size and user_delta ==item_delta
             print(t)
             for index,row in df[df.user_granularity==t].iterrows():
                 userid =row["uid"]
@@ -181,8 +178,7 @@ class DataHelper():
                 rating =row["rating"] # get the r_ijt
                 item_seqs,user_seqs=[],[]
                 for pre_t in range(t-self.conf.user_windows_size ,t):  
-                    if self.conf.is_sparse:
-                        
+                    if self.conf.is_sparse:                        
                         user_seqs.append( self.user_dict[userid].get(pre_t,None))
                         item_seqs.append( self.item_dict[itemid].get(pre_t,None))
                     else:
@@ -190,16 +186,16 @@ class DataHelper():
                         item_seqs.append( self.item_dict[itemid].get(pre_t,None))
 
                 if self.conf.is_sparse:
-                    user_seqs,item_seqs=getUserVector1(user_seqs),getItemVector1(item_seqs)
+                    user_seqs,item_seqs=getUserVector1(user_seqs),getItemVector1(item_seqs)#user_seqs: T*|M|
                 else:
                     user_seqs,item_seqs=self.getUserVector(user_seqs),self.getItemVector(item_seqs)
                 
-                if mode=="train": #if :                
-                    null_user_seqs = len([e for e in user_seqs if e is None])
-                    if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
-                        samples.append((user_seqs,item_seqs,rating,userid,itemid))    
-                else:
-                    samples.append((user_seqs,item_seqs,rating,userid,itemid))          
+#                if mode=="train": #if :                
+#                    null_user_seqs = len([e for e in user_seqs if e is None])
+#                    if null_user_seqs < self.conf.user_windows_size: # Append new examples when the user have rated at least 1 in recent 140 days.
+#                        samples.append((user_seqs,item_seqs,rating,userid,itemid))    
+#                else:
+                samples.append((user_seqs,item_seqs,rating,userid,itemid))          
         
         return samples
 
@@ -274,6 +270,7 @@ class DataHelper():
                 samples= self.prepare_dns(sess=sess,model=model,mode=mode, epoches_size=epoches_size)
             else:
                 samples=self.prepare_uniform(mode=mode, epoches_size=epoches_size)
+                
             pickle.dump(samples, open(pickle_name, 'wb'),protocol=2)
 
         if mode=="train" and shuffle:      
@@ -475,10 +472,11 @@ def getScore1(args):
         all_rating= np.random.random( len(helper.items)+1)  #[user_id]
     # all_rating = model.predictionItems(sess,user_id)[0]#[user_id] MF generated all rating to pick the highest K candidates.
     else:
-        all_rating = model.predictionItems(sess,user_id)
+        all_rating = model.predictionItems(sess,user_id) # MF rating
+        
     sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
     if not rerank or FLAGS.model_type=="mf":
-            
+        
         # print (sortedScores[:10])
         # print(helper.test_pos_items.get(user_id,None))
         rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
