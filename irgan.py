@@ -74,7 +74,7 @@ for sess,model,init,saver in zip([sess1,sess2],[gen,dis],[init1,init2],[saver1,s
     sess.run(init)
     
 
-    checkpoint_filepath= "model/joint-25-0.28000.ckpt"
+    checkpoint_filepath= "model/joint-25-0.24133.ckpt"
     saver.restore(sess,checkpoint_filepath)
     scores=helper.evaluateMultiProcess(sess,model)
     if FLAGS.model_type=="mf":
@@ -89,7 +89,7 @@ def main(checkpoint_dir="model/"):
     for epoch in range(1000):
 
         if epoch > 0:
-            for d_epoch in range(10):
+            for d_epoch in range(helper.conf.d_epoch_size):
 
                 # for i,(uid,itemid,rating) in enumerate(helper.getBatch4MF()):
                 rnn_losses,mf_losses,joint_losses=[],[],[]
@@ -117,8 +117,9 @@ def main(checkpoint_dir="model/"):
                     print(best_p5)
 
                 # Train G
-        for g_epoch in range(50):  # 50
-            for user in helper.data["uid"].unique(): 
+
+        for g_epoch in range(helper.conf.g_epoch_size):  # 50
+            for user in helper.train["uid"].unique(): # train ?
 
 #                pos_items_time_dict=helper.user_item_pos_rating_time_dict.get(user,{})
 #                if len(pos_items_time_dict)==0:                   # todo  not do this
@@ -127,19 +128,24 @@ def main(checkpoint_dir="model/"):
                 exp_rating = np.exp(np.array(all_rating) *helper.conf.temperature)
                 prob = exp_rating / np.sum(exp_rating)
 
-                neg = np.random.choice(np.arange(helper.i_cnt), size=len(helper.conf.gan_k), p=prob)
+                neg = np.random.choice(np.arange(helper.i_cnt), size=helper.conf.gan_k, p=prob)
                 samples=[]
-                for  neg_item_id in neg:                # gan_k guding
+                for  neg_item_id in neg:     
+                    if helper.conf.lastone:          
+                        u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
 
-                    u_seqss,i_seqss= helper.getSeqOverAlltime(user,neg_item_id)
-                    predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss))
-                    index=np.argmax(predicted)
-                    samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
-                
-                rewards= dis.getRewards(sess2, samples)
+                        predicted = gen.prediction(sess1,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
+                        index=np.argmax(predicted)
+                        samples.append((u_seqss[index],i_seqss[index],user,neg_item_id ))
+                    else:
+                        u_seqs,i_seqs=helper.getSeqInTime(user,neg_item_id,0)
+                        samples.append((u_seqs,i_seqs,user,neg_item_id ))
+
+                rewards= dis.getRewards(sess2, samples,sparse=True)
 
 
-                gen.gan_feadback(sess1,samples, rewards)
+                print("gan loss %.5f"%gen.gan_feadback(sess1,samples, rewards))
+            print("have processed %d epoch of G" %g_epoch)
 
 if __name__== "__main__":
 	main()

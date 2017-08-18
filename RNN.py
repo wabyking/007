@@ -14,9 +14,10 @@ from __future__ import division
 
 import tensorflow as tf
 import pickle
+import numpy as np
 
 class RNNGenerator(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn"):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -41,8 +42,26 @@ class RNNGenerator(object):
 
         # Place holder for features and captions
         
-        self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
-        self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])        
+        if use_sparse_tensor:
+            self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
+            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])
+
+            self.user_indices = tf.placeholder(tf.int64)
+            self.user_shape = tf.placeholder(tf.int64)
+            self.user_values = tf.placeholder(tf.float64)
+            user_sparse_tensor = tf.SparseTensor(user_indices, user_shape, user_values)
+            self.user_sequence = tf.sparse_tensor_to_dense(user_sparse_tensor)
+
+            self.item_indices = tf.placeholder(tf.int64)
+            self.item_shape = tf.placeholder(tf.int64)
+            self.item_values = tf.placeholder(tf.float64)
+            item_sparse_tensor = tf.SparseTensor(item_indices, item_shape, item_values)
+            self.item_sequence = tf.sparse_tensor_to_dense(item_sparse_tensor)
+            
+        else:
+            self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
+            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])   
+
         self.rating = tf.placeholder(tf.float32, [None,])
                         
         self.learning_rate = learning_rate
@@ -207,7 +226,7 @@ class RNNGenerator(object):
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.gan_loss=-tf.reduce_mean(tf.log(self.pre_joint_logits) * self.reward)
+        self.gan_loss=-tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward)
         if self.model_type!="rnn":
             self.gan_loss+= self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
         if self.model_type!="mf":
@@ -226,7 +245,9 @@ class RNNGenerator(object):
 #        pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
 #        self.pg_updates = pg_opt.apply_gradients(grads_and_vars=pg_grads_and_vars)                                
         
-    def prediction(self, sess, user_sequence, item_sequence, u, i):
+    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
+        if sparse:
+            user_sequence,item_sequence=[ii.toarray() for ii in user_sequence],[ii.toarray() for ii in item_sequence]
         outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, 
                         self.item_sequence: item_sequence, self.u: u, self.i: i})  
         return outputs
@@ -247,15 +268,18 @@ class RNNGenerator(object):
 
 
     def gan_feadback(self,sess, samples,reward):
-        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
+        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
+
         _,loss = sess.run([self.gan_update , self.gan_loss], feed_dict = {self.user_sequence: u_seq, 
                             self.item_sequence: i_seq,  self.u: u, self.i: i ,self.reward:reward})
-        return
+        return loss
 
-    def getRewards(self,sess, samples):
+    def getRewards(self,sess, samples,sparse=False):
         # print([item for item in (sample[i] for i in range(4) for sample in samples )])
-        
-        u_seq,i_seq,u,i = ([item for item in ([sample[i] for sample in samples]  for i in range(4))])
+
+        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
+        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
 
         return self.prediction(sess,u_seq,i_seq,u,i) 
 

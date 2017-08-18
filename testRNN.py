@@ -86,8 +86,8 @@ saver = tf.train.Saver(max_to_keep=40)
 
 # model.restoreModel("mf.model",save_type="mf")
 tf.global_variables_initializer().run()
-checkpoint_filepath= "model/joint-25-0.28000.ckpt"
-saver.restore(sess,checkpoint_filepath)
+# checkpoint_filepath= "model/joint-25-0.28000.ckpt"
+# saver.restore(sess,checkpoint_filepath)
 
 
 
@@ -117,6 +117,8 @@ def main(checkpoint_dir="model/"):
 
             # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
             # print(u_seqs,i_seqs,rating,uid,itemid)
+   
+
             _,loss_mf,loss_rnn,joint_loss= model.pretrain_step(sess,  rating, uid, itemid,u_seqs,i_seqs)
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
@@ -135,7 +137,7 @@ def main(checkpoint_dir="model/"):
        	# print(i)
         print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
         scores= (helper.evaluateMultiProcess(sess,model))
-        print(helper.evaluateRMSE(sess,model))
+        # print(helper.evaluateRMSE(sess,model))
         print(scores)
         if FLAGS.model_type=="mf":
             curentt_p5_score=scores[1]
