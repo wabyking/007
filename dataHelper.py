@@ -17,8 +17,6 @@ import sklearn
 import itertools
 import tensorflow as tf
 import random
-# import sys
-# sys.setrecursionlimit(5000)
 
 mp=False
 

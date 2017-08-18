@@ -167,70 +167,44 @@ class RNNGenerator(object):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
-        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
-        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,logits=self.pre_logits_RNN))
-        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,
-                                                                logits=self.pre_logits_MF)) + self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.item_bias))                
+        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
-        if self.model_type=="mf":
-            print("use mf logits")
-            self.pre_joint_logits = self.pre_logits_MF  +0*self.pre_logits_RNN
-        elif self.model_type=="rnn":
-            print("use rnn logits")
-            self.pre_joint_logits = self.pre_logits_RNN+0*self.pre_logits_MF
-        else:
-            self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
-            print("use joint logits")
+        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
+        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) + RNN_Regularizer
+        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) + MF_Regularizer
+        
+        self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
+        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) 
+        
+        if self.update_rule == 'adam':
+            self.optimizer = tf.train.AdamOptimizer
+        elif self.update_rule == 'momentum':
+            self.optimizer = tf.train.MomentumOptimizer
+        elif self.update_rule == 'rmsprop':
+            self.optimizer = tf.train.RMSPropOptimizer   
 
-        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating,
-                                                                logits=self.pre_joint_logits)) 
-        if self.model_type!="rnn":
-            print("use mf regulation")
-            self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-        if self.model_type!="mf":
-            print("use rnn regulation")
-            # self.joint_loss+= self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_mf])
-            self.joint_loss+= self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
-        if False:
-            pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)            
-                     
+        optimizer = self.optimizer(learning_rate=self.learning_rate)
+        if self.model_type == 'joint':
             grads = tf.gradients(self.joint_loss, tf.trainable_variables())
-            grads_and_vars = list(zip(grads, tf.trainable_variables()))
-            self.pretrain_updates = pretrain_opt.apply_gradients(grads_and_vars=grads_and_vars)
-        # print( tf.trainable_variables())
-        elif True:
-            pretrain_opt = tf.train.GradientDescentOptimizer(self.learning_rate)
-            # self.d_params = [self.user_embeddings,self.item_embeddings,self.item_bias]
-            self.pretrain_updates = pretrain_opt.minimize(self.joint_loss) #,var_list=self.d_params
-        elif False:
-            self.global_step = tf.get_variable('global_step_in_class', [], initializer=tf.constant_initializer(0), trainable=False)
-            pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)
-            gradients = pretrain_opt.compute_gradients(self.joint_loss)
-            clipped_gradients = [(tf.clip_by_value(_[0], -self.grad_clip, self.grad_clip), _[1]) for _ in gradients]
-            self.pretrain_updates = pretrain_opt.apply_gradients(clipped_gradients,global_step= self.global_step)
-        else:
-            tavrs=tf.trainable_variables()
-            gradients,_=tf.clip_by_norm(tf.gradients(self.pre_joint_logits,tavrs),self.grad_clip)
-            pretrain_opt = tf.train.AdamOptimizer(self.learning_rate)
-            self.pretrain_updates = pretrain_opt.apply_gradients(zips(clipped_gradients,tavrs))
+        elif self.model_type == 'rnn':
+            grads = tf.gradients(self.loss_RNN, tf.trainable_variables())
+        elif self.model_type == 'mf':
+            grads = tf.gradients(self.loss_MF, tf.trainable_variables())
+            
+        grads_and_vars = list(zip(grads, tf.trainable_variables()))
+        self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=grads_and_vars)            
+            
         self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.pg_loss = -tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward)
+        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward) + MF_Regularizer + RNN_Regularizer             
         
-        if self.model_type!="rnn":
-            self.pg_loss+= self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-        if self.model_type!="mf":
-            self.pg_loss+= self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
-
-        self.pg_updates = pretrain_opt.minimize(self.pg_loss)     # todo : use different opt
-        
-#        pg_opt = tf.train.AdamOptimizer(self.learning_rate)            
-#        pg_grads = tf.gradients(self.pg_loss, tf.trainable_variables())
-#        pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
-#        self.pg_updates = pg_opt.apply_gradients(grads_and_vars=pg_grads_and_vars)                                
+        pg_grads = tf.gradients(self.pg_loss, tf.trainable_variables())               
+        pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
+        self.pg_updates = optimizer.apply_gradients(grads_and_vars=pg_grads_and_vars)                     
         
     def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
         if sparse:
@@ -242,24 +216,7 @@ class RNNGenerator(object):
     def predictionItems(self, sess, u):
         outputs = sess.run(self.all_logits, feed_dict = {self.u: u})  
         return outputs
-         
-    def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
-        if user_sequence is not None:
-            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
-                            self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
-        else:
-            outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
-
-        return outputs
-
-
-    def unsupervised_train_step(self,sess, samples,reward):
-        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
-        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
-
-        _,pg_loss = sess.run([self.pg_updates , self.pg_loss], feed_dict = {self.user_sequence: u_seq, 
-                            self.item_sequence: i_seq,  self.u: u, self.i: i ,self.reward:reward})
-        return pg_loss
+             
 
     def getRewards(self,sess, samples,sparse=False):
         u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
