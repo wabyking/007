@@ -43,16 +43,16 @@ class Singleton(object):
 
 
 
-		flags.DEFINE_float("learning_rate", 0.01, "Batch size of data while training")
+		flags.DEFINE_float("learning_rate", 0.005, "Batch size of data while training")
 		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
-		flags.DEFINE_float("lamda", 0.1, "Batch size of data while training")
+		flags.DEFINE_float("lamda", 0.05, "Batch size of data while training")
 		flags.DEFINE_float("temperature", 1, "Batch size of data while training")
 
 		flags.DEFINE_float("momentum", 1, "Batch size of data while training")
 
 		flags.DEFINE_integer("threshold", 300, "Erase the users if the number of rating less than threshold")
 		flags.DEFINE_boolean("TestAccuracy", True, "Test accuracy")
-		flags.DEFINE_boolean("pretrained", True, "Test accuracy")
+		flags.DEFINE_boolean("pretrained", False, "Test accuracy")
 		flags.DEFINE_boolean("is_sparse", True, "Test accuracy")
 		flags.DEFINE_boolean("rating_flag", False, "Test accuracy")
 		flags.DEFINE_boolean("dns", False, "Test accuracy")

@@ -17,7 +17,7 @@ import pickle
 import numpy as np
 
 class Dis(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False, update_rule="adam"):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False, update_rule="sgd"):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -171,8 +171,8 @@ class Dis(object):
 #        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
 #        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
-#        tv = tf.trainable_variables()
-#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
+        tv = tf.trainable_variables()
+        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
 
         self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
         self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) #+ RNN_Regularizer
@@ -180,14 +180,16 @@ class Dis(object):
         self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+ MF_Regularizer
         
         self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
-        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) 
+        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
         
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
         elif self.update_rule == 'momentum':
             self.optimizer = tf.train.MomentumOptimizer
         elif self.update_rule == 'rmsprop':
-            self.optimizer = tf.train.RMSPropOptimizer   
+            self.optimizer = tf.train.RMSPropOptimizer
+        elif self.update_rule == 'sgd':
+            self.optimizer = tf.train.GradientDescentOptimizer
 
         optimizer = self.optimizer(learning_rate=self.learning_rate)
         if self.model_type == 'joint':

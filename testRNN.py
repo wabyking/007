@@ -48,7 +48,7 @@ dis = Dis(itm_cnt = helper.i_cnt,
              initdelta = 0.05,
              MF_paras=paras,
              model_type=FLAGS.model_type,
-             update_rule = 'adam'
+             update_rule = 'sgd'
              )
 
 dis.build_pretrain()
@@ -105,7 +105,7 @@ def main(checkpoint_dir="model/"):
             # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
             # print(u_seqs,i_seqs,rating,uid,itemid)
    
-            _,loss_mf,loss_rnn,joint_loss,_ = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
+            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
             joint_losses.append(joint_loss)                        
