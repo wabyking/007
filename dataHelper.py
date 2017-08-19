@@ -59,7 +59,7 @@ class DataHelper():
         # print(pos_items.to_dict())
                 
         user_item_pos_rating_time_dict= lambda group:{item:time for i,(item,time)  in group[group.rating>3.99][["itemid","user_granularity"]].iterrows()}
-        self.user_item_pos_rating_time_dict=self.train[:self.conf.subset_size].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
+        self.user_item_pos_rating_time_dict=self.train.groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
        
         
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items).to_dict()
