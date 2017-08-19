@@ -112,8 +112,8 @@ def main(checkpoint_dir="model/"):
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
             joint_losses.append(joint_loss)       
-            if i%100==0:
-                print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
+            # if i%100==0:
+            #     print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
                 # print("rnn mean logists: %.5f mf mean logits: %.5f"%(logits_rnn,logits_mf))                 
 
         # print(sess.run(model.user_embeddings))
