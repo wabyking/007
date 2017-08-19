@@ -202,8 +202,8 @@ class Dis(object):
             grads = tf.gradients(self.loss_MF, tf.trainable_variables())
             
         grads_and_vars = list(zip(grads, tf.trainable_variables()))
-        # clipped_gradients = [(tf.clip_by_value(_[0], -self.grad_clip, self.grad_clip), _[1]) for _ in grads_and_vars]
-        self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=grads_and_vars)            
+        clipped_gradients = [(tf.clip_by_value(_[0], -self.grad_clip, self.grad_clip), _[1]) for _ in grads_and_vars]
+        self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=clipped_gradients)            
             
         self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
 
