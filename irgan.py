@@ -149,9 +149,9 @@ def main(checkpoint_dir="model/"):
                         
                 rewards = dis.getRewards(sess,gen, samples, sparse=True)
                 
-                gen.unsupervised_train_step(sess,samples, rewards)
+                pg_loss=gen.unsupervised_train_step(sess,samples, rewards)
                 
-#                print("gan loss %.5f"%gen.unsupervised_train_step(sess1,samples, rewards))
+                print("gan loss %.5f"%pg_loss)
                 
             scores = (helper.evaluateMultiProcess(sess,gen))
             print(scores)            

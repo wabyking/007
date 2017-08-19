@@ -48,7 +48,7 @@ dis = Dis(itm_cnt = helper.i_cnt,
              initdelta = 0.05,
              MF_paras=paras,
              model_type=FLAGS.model_type,
-             update_rule = 'adam'
+             update_rule = 'sgd'
              )
 
 dis.build_pretrain()
@@ -105,10 +105,16 @@ def main(checkpoint_dir="model/"):
             # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
             # print(u_seqs,i_seqs,rating,uid,itemid)
    
-            _,loss_mf,loss_rnn,joint_loss,_ = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
+            _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
+            # print (mf)
+            # print (rnn)
+            # print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
-            joint_losses.append(joint_loss)                        
+            joint_losses.append(joint_loss)       
+            if i%100==0:
+                print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
+                # print("rnn mean logists: %.5f mf mean logits: %.5f"%(logits_rnn,logits_mf))                 
 
         # print(sess.run(model.user_embeddings))
         # print(sess.run(model.item_embeddings))
