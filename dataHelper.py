@@ -59,7 +59,7 @@ class DataHelper():
         # print(pos_items.to_dict())
                 
         user_item_pos_rating_time_dict= lambda group:{item:time for i,(item,time)  in group[group.rating>3.99][["itemid","user_granularity"]].iterrows()}
-        self.user_item_pos_rating_time_dict=self.train[:self.conf.subset_size].groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
+        self.user_item_pos_rating_time_dict=self.train.groupby("uid").apply(user_item_pos_rating_time_dict).to_dict()
        
         
         self.test_pos_items=self.test.groupby("uid").apply(get_pos_items).to_dict()
@@ -242,18 +242,28 @@ class DataHelper():
             exp_rating = np.exp(np.array(all_rating) *self.conf.temperature)
             prob = exp_rating / np.sum(exp_rating)
 
-            neg = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
-            for  i,(pos,t) in enumerate(pos_items_time_dict.items()):
-
-                u_seqs,i_seqs=self.getSeqInTime(user,pos,t)
-                samples.append((u_seqs,i_seqs,1,user,pos))
-
-                neg_item_id = neg[i]
-                u_seqss,i_seqss= self.getSeqOverAlltime(user,neg_item_id)
-
-                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
-                index=np.argmax(predicted)
-                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
+            sampled_items = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
+            
+            for item in sampled_items:    
+                u_seqs,i_seqs = helper.getSeqInTime(user,item,0)   
+                samples.append((u_seqs,i_seqs,0,user,item ))
+                
+                pos_item,t = pos_items_time_dict[np.random.randint(len(pos_items_time_dict), size=1)].items()
+                
+                u_seqs,i_seqs=self.getSeqInTime(user,pos_item,t)
+                samples.append((u_seqs,i_seqs,1,user,pos_item))                                
+            
+            
+            
+#            for  i,(pos_itm,t) in enumerate(pos_items_time_dict.items()):
+#                u_seqs,i_seqs=self.getSeqInTime(user,pos_itm,t)
+#                samples.append((u_seqs,i_seqs,1,user,pos_itm))
+#                u_seqs,i_seqs = helper.getSeqInTime(user,neg_itms[i],0)   
+#                samples.append((u_seqs,i_seqs,0,user,neg_itms[i] ))
+#                u_seqss,i_seqss= self.getSeqOverAlltime(user,neg_item_id)
+#                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
+#                index=np.argmax(predicted)
+#                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
  
         return samples
 

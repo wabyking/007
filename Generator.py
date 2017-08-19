@@ -168,27 +168,34 @@ class Gen(object):
                 _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
          
         
-        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+#        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+#        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
+#        tv = tf.trainable_variables()
+#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
+
         self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
-        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) + RNN_Regularizer
+        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) #+ RNN_Regularizer
         self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) + MF_Regularizer
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
         
         self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
+#        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
         
-        self.joint_loss_list = tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)
-        
-        self.joint_loss = tf.reduce_mean(self.joint_loss_list) 
-        
+        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) #+Regularizer*self.lamda
+        # self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+        self.joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        self.joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
         elif self.update_rule == 'momentum':
             self.optimizer = tf.train.MomentumOptimizer
         elif self.update_rule == 'rmsprop':
-            self.optimizer = tf.train.RMSPropOptimizer   
-
+            self.optimizer = tf.train.RMSPropOptimizer
+        else:
+            self.optimizer = tf.train.GradientDescentOptimizer
+            
         optimizer = self.optimizer(learning_rate=self.learning_rate)
         if self.model_type == 'joint':
             grads = tf.gradients(self.joint_loss, tf.trainable_variables())
@@ -204,7 +211,9 @@ class Gen(object):
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward) + MF_Regularizer + RNN_Regularizer             
+        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward)          
+        self.pg_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        self.pg_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
         pg_grads = tf.gradients(self.pg_loss, tf.trainable_variables())               
         pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
@@ -212,14 +221,24 @@ class Gen(object):
          
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
-            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss, self.joint_loss_list ], feed_dict = {self.user_sequence: user_sequence, 
+            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
 
         return outputs
 
-
+    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
+        if sparse:
+            user_sequence,item_sequence=[ii.toarray() for ii in user_sequence],[ii.toarray() for ii in item_sequence]
+        outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, 
+                        self.item_sequence: item_sequence, self.u: u, self.i: i})  
+        return outputs
+    
+    def predictionItems(self, sess, u):
+        outputs = sess.run(self.all_logits, feed_dict = {self.u: u})  
+        return outputs
+    
     def unsupervised_train_step(self,sess, samples,reward):
         u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
         u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]

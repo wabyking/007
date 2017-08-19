@@ -171,24 +171,29 @@ class Dis(object):
 #        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
 #        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
-        tv = tf.trainable_variables()
-        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
+#        tv = tf.trainable_variables()
+#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
 
         self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
         self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) #+ RNN_Regularizer
         self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+ MF_Regularizer
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
         
         self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
-        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
+#        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
         
+        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) #+Regularizer*self.lamda
+        # self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+        self.joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        self.joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
         elif self.update_rule == 'momentum':
             self.optimizer = tf.train.MomentumOptimizer
         elif self.update_rule == 'rmsprop':
             self.optimizer = tf.train.RMSPropOptimizer
-        elif self.update_rule == 'sgd':
+        else:
             self.optimizer = tf.train.GradientDescentOptimizer
 
         optimizer = self.optimizer(learning_rate=self.learning_rate)
@@ -200,7 +205,8 @@ class Dis(object):
             grads = tf.gradients(self.loss_MF, tf.trainable_variables())
             
         grads_and_vars = list(zip(grads, tf.trainable_variables()))
-        self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=grads_and_vars)            
+        clipped_gradients = [(tf.clip_by_value(_[0], -self.grad_clip, self.grad_clip), _[1]) for _ in grads_and_vars if _[1] is not None and _[0] is not None]
+        self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=clipped_gradients)            
             
         self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
 
@@ -214,7 +220,7 @@ class Dis(object):
     
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
-            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
+            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.pre_logits_RNN,self.pre_logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
@@ -236,26 +242,25 @@ class Dis(object):
     def getRewards(self,sess,gen, samples,sparse=False):
         u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
         u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
-        rating = [ sample[5]  for sample in samples ]
-        
-        indices = [j for j,v in enumerate([sample[4] for sample in samples]) if v == 1]                
+#        rating = [ sample[5]  for sample in samples ]        
+#        indices = [j for j,v in enumerate([sample[4] for sample in samples]) if v == 1]                
         
         labeled_rewards = np.zeros(len(samples))
         
-        if len(indices) > 0:
-            _,loss_mf,loss_rnn,joint_loss,joint_loss_list = gen.pretrain_step(sess, [rating[ind] for ind in indices], 
-                                                          [u[ind] for ind in indices], 
-                                                          [i[ind] for ind in indices], 
-                                                          [u_seq[ind] for ind in indices], 
-                                                          [i_seq[ind] for ind in indices])
-            for ind,v in enumerate(joint_loss_list):
-                labeled_rewards[indices[ind]] = v
+#        if len(indices) > 0:
+#            _,loss_mf,loss_rnn,joint_loss,joint_loss_list = gen.pretrain_step(sess, [rating[ind] for ind in indices], 
+#                                                          [u[ind] for ind in indices], 
+#                                                          [i[ind] for ind in indices], 
+#                                                          [u_seq[ind] for ind in indices], 
+#                                                          [i_seq[ind] for ind in indices])
+#            for ind,v in enumerate(joint_loss_list):
+#                labeled_rewards[indices[ind]] = v
             
         unlabeled_rewards = self.prediction(sess,u_seq,i_seq,u,i)
         
         rewards = labeled_rewards + unlabeled_rewards
         
-        return 2 * (tf.sigmoid(rewards) - 0.5)    
+        return 2 * (self.sigmoid(rewards) - 0.5)    
 
 
     def saveMFModel(self, sess, filename):
@@ -263,5 +268,7 @@ class Dis(object):
         param = sess.run(self.paras_mf)
         pickle.dump(param, open(filename, 'wb'))
 
-
+    def sigmoid(self,x):
+        exp_x=np.exp(x)
+        return exp_x/np.sum(exp_x)
     

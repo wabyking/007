@@ -50,10 +50,22 @@ dis = Dis(itm_cnt = helper.i_cnt,
              model_type=FLAGS.model_type,
              update_rule = 'sgd'
              )
-
 dis.build_pretrain()
 
-
+gen = Gen(itm_cnt = helper.i_cnt, 
+         usr_cnt = helper.u_cnt, 
+         dim_hidden = FLAGS.rnn_embedding_dim, 
+         n_time_step = FLAGS.item_windows_size, 
+         learning_rate = FLAGS.learning_rate, 
+         grad_clip = 0.2,
+         emb_dim = FLAGS.mf_embedding_dim,
+         lamda = FLAGS.lamda,
+         initdelta = 0.05,
+         MF_paras=paras,
+         model_type=FLAGS.model_type,
+         update_rule = 'sgd'
+         )
+gen.build_pretrain()
 
 # waby = DIS(helper.i_cnt, helper.u_cnt, FLAGS.mf_embedding_dim, lamda=0.1, param=None, initdelta=0.05, learning_rate=0.001)
 
@@ -77,16 +89,16 @@ tf.global_variables_initializer().run()
 
 # model.restoreModel("mf.model",save_type="mf")
 
-# checkpoint_filepath= "model/joint-25-0.28000.ckpt"
-# saver.restore(sess,checkpoint_filepath)
+#checkpoint_filepath= "model/joint-25-0.26333.ckpt"
+#saver.restore(sess,checkpoint_filepath)
 # model.saveModel(sess,"rnn.model",save_type="rnn")
 
-#scores=helper.evaluateMultiProcess(sess,dis)
-#if FLAGS.model_type=="mf":
-#    best_p5=scores[1]
-#else:
-#    best_p5=scores[1][1]
-#print(scores)
+scores=helper.evaluateMultiProcess(sess,dis)
+if FLAGS.model_type=="mf":
+    best_p5=scores[1]
+else:
+    best_p5=scores[1][1]
+print(scores)
 
 #global best_p5
 
@@ -105,10 +117,18 @@ def main(checkpoint_dir="model/"):
             # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
             # print(u_seqs,i_seqs,rating,uid,itemid)
    
-            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
+#            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
+            _,loss_mf,loss_rnn,joint_loss = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            # print (mf)
+            # print (rnn)
+            # print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
             rnn_losses.append(loss_rnn)
             mf_losses.append(loss_mf)
-            joint_losses.append(joint_loss)                        
+            joint_losses.append(joint_loss)       
+            # if i%100==0:
+            #     print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
+                # print("rnn mean logists: %.5f mf mean logits: %.5f"%(logits_rnn,logits_mf))                 
 
         # print(sess.run(model.user_embeddings))
         # print(sess.run(model.item_embeddings))
@@ -118,7 +138,10 @@ def main(checkpoint_dir="model/"):
         scores = (helper.evaluateMultiProcess(sess, dis))
         # print(helper.evaluateRMSE(sess,model))
         print(scores)
-
+        scores = (helper.evaluateMultiProcess(sess, gen))
+        # print(helper.evaluateRMSE(sess,model))
+        print(scores)
+        
         if FLAGS.model_type == "mf":
             curentt_p5_score = scores[1]
         else:
