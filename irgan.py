@@ -71,13 +71,13 @@ saver = tf.train.Saver(max_to_keep=40)
 tf.global_variables_initializer().run()
 
 #checkpoint_filepath= "model/joint_g_d/joint-25-0.20000.ckpt"
-checkpoint_filepath= "model/joint-25-0.21533.ckpt"
-saver.restore(sess,checkpoint_filepath)
+# checkpoint_filepath= "model/joint-25-0.21533.ckpt"
+# saver.restore(sess,checkpoint_filepath)
 
-#scores=helper.evaluateMultiProcess(sess, dis)
+# #scores=helper.evaluateMultiProcess(sess, dis)
 
-print(helper.evaluateMultiProcess(sess, dis))
-print(helper.evaluateMultiProcess(sess, gen))
+# print(helper.evaluateMultiProcess(sess, dis))
+# print(helper.evaluateMultiProcess(sess, gen))
 #[[ 0.24111111  0.23333333  0.212       0.25956044  0.26670492  0.3048191 ]
 # [ 0.19444444  0.21533333  0.215       0.21885524  0.27984188  0.41407132]]
 #[[ 0.02333333  0.026       0.025       0.03447644  0.05083666  0.07598918]
@@ -126,7 +126,7 @@ def main(checkpoint_dir="model/"):
     #        (u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, 
     #         u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg) = batchGenerator.next()
     
-            for g_epoch in range(1):            
+            # for g_epoch in range(1):            
     #            user = df["uid"].unique()[np.random.randint(uid_cnt, size=1)[0]]
     ##            for user in df["uid"].unique():
     #            all_rating = dis.predictionItems(sess,user)                           # todo delete the pos ones
@@ -151,7 +151,7 @@ def main(checkpoint_dir="model/"):
                     
                     u_seq_neg,i_seq_neg = [[ s[j].toarray()  for s in negative_samples ]  for j in range(2)]
                     u_neg,i_neg = [[ s[j]  for s in negative_samples ]  for j in range(2,4)]
-                    unlabeled_rewards = dis.prediction(sess,u_seq_neg,i_seq_neg,u_neg,i_neg)
+                    unlabeled_rewards = dis.prediction(sess,u_seq_neg,i_seq_neg,u_neg,i_neg,use_sparse_tensor=False)
                     unlabeled_rewards = [2* (sigmoid(v)-0.5) for v in unlabeled_rewards]
                     
                     pg_loss = gen.unsupervised_train_step(sess, u_seq_neg,i_seq_neg,u_neg,i_neg, unlabeled_rewards)

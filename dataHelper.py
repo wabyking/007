@@ -257,7 +257,11 @@ class DataHelper():
                 negative_samples.append((u_seqs,i_seqs,0,user,item ))
                 
                 # sample positive examples in a random manner
-                positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+                # positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+
+
+                positive_item = np.random.choice(list(pos_items_time_dict.keys()))
+                t=pos_items_time_dict.get(positive_item)
                 u_seqs,i_seqs=self.getSeqInTime(user,positive_item,t)
                 positive_samples.append((u_seqs,i_seqs,1,user,positive_item))
                                     
@@ -273,10 +277,9 @@ class DataHelper():
  
         return positive_samples + negative_samples
 
-
     def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
-        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
@@ -309,7 +312,7 @@ class DataHelper():
             u_seqs=[pair[0] for pair in batch]
 
             i_seqs=[pair[1] for pair in batch]
-            if self.conf.is_sparse:
+            if not self.conf.sparse_tensor and self.conf.is_sparse:
                 if pool is not None:
                     u_seqs=pool.map(sparse2dense, u_seqs)
                     i_seqs=pool.map(sparse2dense, i_seqs)
@@ -328,7 +331,8 @@ class DataHelper():
             # if i %10==0:
             #     print("processed %d lines"%i)
             # # print("spent %f"% (time.time()-start))
-
+            if self.conf.sparse_tensor:
+                u_seqs,i_seqs=self.get_sparse_intput(u_seqs,i_seqs)
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
@@ -361,7 +365,7 @@ class DataHelper():
             batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
             u_seqs = [pair[0] for pair in batch]
             i_seqs = [pair[1] for pair in batch]
-            if self.conf.is_sparse:
+            if not self.conf.sparse_tensor and self.conf.is_sparse:
                 if pool is not None:
                     u_seqs = pool.map(sparse2dense, u_seqs)
                     i_seqs = pool.map(sparse2dense, i_seqs)
@@ -372,6 +376,8 @@ class DataHelper():
             userids = [pair[3] for pair in batch]
             itemids = [pair[4] for pair in batch]
             ratings = [float(ii[2]) for ii in batch]
+            if self.conf.sparse_tensor:
+                u_seqs,i_seqs=get_sparse_intput(u_seqs,i_seqs)
             yield u_seqs,i_seqs,ratings,userids,itemids
 #            batch_b = negative_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
 #            batch_a = positive_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
@@ -539,6 +545,19 @@ class DataHelper():
 
 
         return np.mean(np.array(results),0)
+    def get_sparse_intput(self,user_sequence,item_sequence):
+        _indices,_values=[],[]
+        for index,(cols,rows,values)  in enumerate(user_sequence):
+            _indices.extend([index,x,y]  for x,y in  sorted(zip(cols,rows),key =lambda x:x[0]*2000+x[1] ))
+            _values.extend(values)            
+        user_input= (_indices,_values,[len(user_sequence),self.conf.user_windows_size,self.i_cnt ])
+
+        _indices,_values=[],[]
+        for index,(cols,rows,values)  in enumerate(item_sequence):
+            _indices.extend([index,x,y]  for x,y in  sorted(zip(cols,rows),key =lambda x:x[0]*2000+x[1] ))
+            _values.extend(values)
+        item_input= (_indices,_values,[len(item_sequence),self.conf.user_windows_size,self.u_cnt ])
+        return user_input,item_input
 
 
 
@@ -590,14 +609,13 @@ def getScore1(args):
 
         # print(np.array(u_seqs).shape)
         # print(np.array(i_seqss).shape)
-       
         
         if model is None:
             print ("there is no model, it is random guessing instead!")
             scores=np.random.random( len(rerank_indexs))
         else:
             # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-            scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
+            scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
 
         # 
         sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
@@ -647,6 +665,8 @@ def getItemVector1(item_sets):
                 rows.append(index_i)
                 cols.append(row["uid"])
                 datas.append(row["rating"])
+    if helper.conf.sparse_tensor:
+        return ( rows,cols ,datas)
     result=csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.u_cnt))
     return result
 
@@ -660,6 +680,8 @@ def getUserVector1(user_sets):
                 rows.append(index_i)
                 cols.append(row["itemid"])
                 datas.append(row["rating"])
+    if helper.conf.sparse_tensor:
+        return ( rows,cols ,datas)
     return csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.i_cnt))
 
 def getUserVector(user_sets):

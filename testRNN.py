@@ -48,7 +48,8 @@ dis = Dis(itm_cnt = helper.i_cnt,
              initdelta = 0.05,
              MF_paras=paras,
              model_type=FLAGS.model_type,
-             update_rule = 'sgd'
+             update_rule = 'sgd',
+             use_sparse_tensor=FLAGS.sparse_tensor
              )
 dis.build_pretrain()
 
@@ -63,7 +64,8 @@ gen = Gen(itm_cnt = helper.i_cnt,
          initdelta = 0.05,
          MF_paras=paras,
          model_type=FLAGS.model_type,
-         update_rule = 'sgd'
+         update_rule = 'sgd',
+         use_sparse_tensor=FLAGS.sparse_tensor
          )
 gen.build_pretrain()
 
@@ -89,12 +91,12 @@ tf.global_variables_initializer().run()
 
 # model.restoreModel("mf.model",save_type="mf")
 
-checkpoint_filepath= "model/joint-25-0.21533.ckpt"
-saver.restore(sess,checkpoint_filepath)
+# checkpoint_filepath= "model/joint-25-0.21533.ckpt"
+# saver.restore(sess,checkpoint_filepath)
 # model.saveModel(sess,"rnn.model",save_type="rnn")
 
-print(helper.evaluateMultiProcess(sess, dis))
-print(helper.evaluateMultiProcess(sess, gen))
+# print(helper.evaluateMultiProcess(sess, dis))
+# print(helper.evaluateMultiProcess(sess, gen))
 #scores=helper.evaluateMultiProcess(sess,dis)
 #if FLAGS.model_type=="mf":
 #    best_p5=scores[1]
@@ -121,7 +123,8 @@ def main():
             # print(u_seqs,i_seqs,rating,uid,itemid)
    
 #            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
-#            _,loss_mf,loss_rnn,joint_loss = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+#            _,loss_mf,loss_rnn,joint_loss = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)   
+                     
             _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
             # print (mf)
             # print (rnn)
