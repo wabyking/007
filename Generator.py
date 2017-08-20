@@ -239,12 +239,12 @@ class Gen(object):
         outputs = sess.run(self.all_logits, feed_dict = {self.u: u})  
         return outputs
     
-    def unsupervised_train_step(self,sess, samples,reward):
-        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
-        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
+    def unsupervised_train_step(self,sess, user_sequence, item_sequence, u, i,reward):
+#        u_seq,i_seq = [[ sample[i].toarray()  for sample in samples ]  for i in range(2)]
+#        u,i = [[ sample[i]  for sample in samples ]  for i in range(2,4)]
 
-        _,pg_loss = sess.run([self.pg_updates , self.pg_loss], feed_dict = {self.user_sequence: u_seq, 
-                            self.item_sequence: i_seq,  self.u: u, self.i: i ,self.reward:reward})
+        _,pg_loss = sess.run([self.pg_updates , self.pg_loss], feed_dict = {self.user_sequence: user_sequence, 
+                            self.item_sequence: item_sequence,  self.u: u, self.i: i ,self.reward:reward})
         return pg_loss
    
 

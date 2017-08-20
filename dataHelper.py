@@ -229,32 +229,38 @@ class DataHelper():
             return self.getUserVector(u_seqs),self.getItemVector(i_seqs)
 
     def prepare_dns(self,pool=None,mode="train", epoches_size=1,sess=None,model=None):          
-        df = self.data
-        samples=[]
-
+#        df = self.data
+        df = self.test
+        positive_samples = []
+        negative_samples = []
+                
         for user in df["uid"].unique():
 
             pos_items_time_dict=self.user_item_pos_rating_time_dict.get(user,{})   # null 
             if len(pos_items_time_dict)==0:
                 continue
 
-            all_rating = model.predictionItems(sess,user)                           # todo delete the pos ones
+            # generate pesudo labels for the given user
+            all_rating = model.predictionItems(sess,user)                           # todo delete the pos ones            
             exp_rating = np.exp(np.array(all_rating) *self.conf.temperature)
             prob = exp_rating / np.sum(exp_rating)
+            
+            negative_items_argmax = np.argsort(prob)[::-1][:2]
 
-            sampled_items = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
+            negative_items_sampled = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
             
-            for item in sampled_items:    
+            
+            for item in negative_items_sampled:
+                
+                # the pesudo labels are regarded as high-quality negative labels but at the beginning, the pesudo labels are very low-quality ones.
                 u_seqs,i_seqs = helper.getSeqInTime(user,item,0)   
-                samples.append((u_seqs,i_seqs,0,user,item ))
+                negative_samples.append((u_seqs,i_seqs,0,user,item ))
                 
-                pos_item,t = pos_items_time_dict[np.random.randint(len(pos_items_time_dict), size=1)].items()
-                
-                u_seqs,i_seqs=self.getSeqInTime(user,pos_item,t)
-                samples.append((u_seqs,i_seqs,1,user,pos_item))                                
-            
-            
-            
+                # sample positive examples in a random manner
+                positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+                u_seqs,i_seqs=self.getSeqInTime(user,positive_item,t)
+                positive_samples.append((u_seqs,i_seqs,1,user,positive_item))
+                                    
 #            for  i,(pos_itm,t) in enumerate(pos_items_time_dict.items()):
 #                u_seqs,i_seqs=self.getSeqInTime(user,pos_itm,t)
 #                samples.append((u_seqs,i_seqs,1,user,pos_itm))
@@ -265,7 +271,7 @@ class DataHelper():
 #                index=np.argmax(predicted)
 #                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
  
-        return samples
+        return positive_samples + negative_samples
 
 
     def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
@@ -275,34 +281,28 @@ class DataHelper():
             import gc
             gc.disable()
             samples=pickle.load(open(pickle_name, 'rb'))
-            gc.enable()
-            
+            gc.enable()        
         else:
-            if dns :
-                samples= self.prepare_dns(sess=sess,model=model,mode=mode, epoches_size=epoches_size)
-            else:
-                samples=self.prepare_uniform(mode=mode, epoches_size=epoches_size)
-                
+            samples = self.prepare_uniform(mode=mode, epoches_size=epoches_size)            
             pickle.dump(samples, open(pickle_name, 'wb'),protocol=2)
 
         if mode=="train" and shuffle:      
-
-            start=time.time()
+            start=time.time()            
+            
+            random.shuffle(samples)                      
+            print("shuffle time spent %f"% (time.time()-start))
             # samples =sklearn.utils.shuffle(samples) 
-
-            random.shuffle(samples)
-
             # shuffle_index= sklearn.utils.shuffle(np.arange(len(samples)))
             # samples= np.array(samples)[shuffle_index].tolist()
-            print("shuffle time spent %f"% (time.time()-start))
 
-        n_batches= int(len(samples)/ self.conf.batch_size)
+        n_batches = int(len(samples)/ self.conf.batch_size)
         print("%d batch"% n_batches)
                 
         for i in range(0,n_batches):
-            start=time.time()
-
+            start=time.time()            
+           
             batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+                
             #u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
             #i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
 
@@ -332,7 +332,79 @@ class DataHelper():
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
+    def getBatchFromDNS(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        if os.path.exists(pickle_name) and not fresh:
+            import gc
+            gc.disable()
+            samples = pickle.load(open(pickle_name, 'rb'))
+            gc.enable()
+            
+        else:
+            samples = self.prepare_dns(sess=sess,model=model,mode=mode, epoches_size=epoches_size)
+            pickle.dump(samples, open(pickle_name, 'wb'),protocol=2)
+
+        if mode=="train" and shuffle:      
+            start=time.time()            
+            random.shuffle(samples)
+#            random.shuffle(positive_samples)
+#            random.shuffle(negative_samples)                     
+            print("shuffle time spent %f"% (time.time()-start))
         
+#        n_batches = int(len(negative_samples)/ self.conf.batch_size)      
+        n_batches = int(len(samples)/ self.conf.batch_size)      
+        print("%d batch"% n_batches)
+                
+        for i in range(0,n_batches):
+            start=time.time()                        
+            batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+            u_seqs = [pair[0] for pair in batch]
+            i_seqs = [pair[1] for pair in batch]
+            if self.conf.is_sparse:
+                if pool is not None:
+                    u_seqs = pool.map(sparse2dense, u_seqs)
+                    i_seqs = pool.map(sparse2dense, i_seqs)
+                else:
+                    u_seqs = [v for v in map(sparse2dense, u_seqs)]
+                    i_seqs = [v for v in map(sparse2dense, i_seqs)]          
+
+            userids = [pair[3] for pair in batch]
+            itemids = [pair[4] for pair in batch]
+            ratings = [float(ii[2]) for ii in batch]
+            yield u_seqs,i_seqs,ratings,userids,itemids
+#            batch_b = negative_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
+#            batch_a = positive_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
+#            batch = np.concatnate(batch_a,batch_b)
+           
+#            u_seqs_pos = [pair[0] for pair in batch_a]
+#            i_seqs_pos = [pair[1] for pair in batch_a]
+#            if self.conf.is_sparse:
+#                if pool is not None:
+#                    u_seqs_pos = pool.map(sparse2dense, u_seqs_pos)
+#                    i_seqs_pos = pool.map(sparse2dense, i_seqs_pos)
+#                else:
+#                    u_seqs_pos = [v for v in map(sparse2dense, u_seqs_pos)]
+#                    i_seqs_pos = [v for v in map(sparse2dense, i_seqs_pos)]          
+#
+#            userids_pos = [pair[3] for pair in batch_a]
+#            itemids_pos = [pair[4] for pair in batch_a]
+#            ratings_pos = [float(ii[2]) for ii in batch_a]
+#            
+#            u_seqs_neg = [pair[0] for pair in batch_b]
+#            i_seqs_neg = [pair[1] for pair in batch_b]
+#            if self.conf.is_sparse:
+#                if pool is not None:
+#                    u_seqs_neg = pool.map(sparse2dense, u_seqs_neg)
+#                    i_seqs_neg = pool.map(sparse2dense, i_seqs_neg)
+#                else:
+#                    u_seqs_neg = [v for v in map(sparse2dense, u_seqs_neg)]
+#                    i_seqs_neg = [v for v in map(sparse2dense, i_seqs_neg)]          
+#
+#            userids_neg = [pair[3] for pair in batch_b]
+#            itemids_neg = [pair[4] for pair in batch_b]
+#            ratings_neg = [float(ii[2]) for ii in batch_b]            
+#            yield u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg       
 
     def getUserVector(self,user_sets):
         u_seqs=[]
