@@ -71,10 +71,16 @@ saver = tf.train.Saver(max_to_keep=40)
 tf.global_variables_initializer().run()
 
 #checkpoint_filepath= "model/joint_g_d/joint-25-0.20000.ckpt"
+
 checkpoint_filepath= "model/joint-25-0.27733.ckpt"
 saver.restore(sess,checkpoint_filepath)
 
-#scores=helper.evaluateMultiProcess(sess, dis)
+# checkpoint_filepath= "model/joint-25-0.21533.ckpt"
+# saver.restore(sess,checkpoint_filepath)
+
+
+# #scores=helper.evaluateMultiProcess(sess, dis)
+
 
 #print(helper.evaluateMultiProcess(sess, dis))
 #print(helper.evaluateMultiProcess(sess, gen))
@@ -89,6 +95,9 @@ saver.restore(sess,checkpoint_filepath)
 
 #[[ 0.26111111  0.23333333  0.21        0.27076758  0.26552905  0.30000889]
 # [ 0.16333333  0.154       0.16266667  0.18576331  0.20232514  0.29628877]]
+
+
+# print(helper.evaluateMultiProcess(sess, dis))
 
 #[[ 0.24111111  0.23333333  0.212       0.25956044  0.26670492  0.3048191 ]
 # [ 0.19444444  0.21533333  0.215       0.21885524  0.27984188  0.41407132]]
@@ -134,13 +143,14 @@ def main(checkpoint_dir="model/"):
     #        (u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, 
     #         u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg) = batchGenerator.next()
     
-#            for g_epoch in range(1):            
+
     #            user = df["uid"].unique()[np.random.randint(uid_cnt, size=1)[0]]
     ##            for user in df["uid"].unique():
     #            all_rating = dis.predictionItems(sess,user)                           # todo delete the pos ones
     #            exp_rating = np.exp(np.array(all_rating) * helper.conf.temperature)
     #            prob = exp_rating / np.sum(exp_rating)                
     #            sampled_items = np.random.choice(np.arange(helper.i_cnt), size=128, p=prob)
+
     for e in range(10):
             
         for g_epoch in range(20):    
@@ -177,8 +187,7 @@ def main(checkpoint_dir="model/"):
                 u_pos,i_pos = [[ s[j]  for s in positive_samples ]  for j in range(2,4)]
                 labeled_rewards = dis.prediction(sess,u_seq_pos,i_seq_pos,u_pos,i_pos)
                 labeled_rewards = [2* (sigmoid(v)-0.5) + 0.1 for v in labeled_rewards]
-                
-#                    pg_loss = gen.unsupervised_train_step(sess, u_seq_neg,i_seq_neg,u_neg,i_neg, unlabeled_rewards)
+
                 pg_loss = gen.unsupervised_train_step(sess, u_seq_neg + u_seq_pos,
                                                       i_seq_neg + i_seq_pos,
                                                       u_neg + u_pos,i_neg + i_pos, unlabeled_rewards + labeled_rewards)

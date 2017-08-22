@@ -17,7 +17,7 @@ import pickle
 import numpy as np
 
 class Dis(object):
-    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=False, update_rule="sgd"):
+    def __init__(self, itm_cnt, usr_cnt, dim_hidden, n_time_step, learning_rate, grad_clip, emb_dim, lamda=0.2, initdelta=0.05,MF_paras=None,model_type="rnn",use_sparse_tensor=True, update_rule="sgd",pairwise=False):
         """
         Args:
             dim_itm_embed: (optional) Dimension of item embedding.
@@ -38,26 +38,20 @@ class Dis(object):
 
         self.weight_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
         self.const_initializer = tf.constant_initializer(0.0)
+
         self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        self.sparse_tensor=use_sparse_tensor
 
         # Place holder for features and captions
-        
-        if use_sparse_tensor:
-            self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
-            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])
-
-            self.user_indices = tf.placeholder(tf.int64)
-            self.user_shape = tf.placeholder(tf.int64)
-            self.user_values = tf.placeholder(tf.float64)
-            user_sparse_tensor = tf.SparseTensor(user_indices, user_shape, user_values)
-            self.user_sequence = tf.sparse_tensor_to_dense(user_sparse_tensor)
-
-            self.item_indices = tf.placeholder(tf.int64)
-            self.item_shape = tf.placeholder(tf.int64)
-            self.item_values = tf.placeholder(tf.float64)
-            item_sparse_tensor = tf.SparseTensor(item_indices, item_shape, item_values)
-            self.item_sequence = tf.sparse_tensor_to_dense(item_sparse_tensor)
-            
+        self.pairwise=pairwise
+        if self.sparse_tensor:
+            self.user_sparse_tensor= tf.sparse_placeholder(tf.float32)
+            self.user_sequence = tf.sparse_tensor_to_dense(self.user_sparse_tensor)
+            self.item_sparse_tensor= tf.sparse_placeholder(tf.float32)
+            self.item_sequence = tf.sparse_tensor_to_dense(self.item_sparse_tensor)   
+            if self.pairwise:
+                self.item_neg_sparse_tensor= tf.sparse_placeholder(tf.float32)
+                self.item_neg_sequence = tf.sparse_tensor_to_dense(self.item_sparse_tensor) 
         else:
             self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
             self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])   
@@ -73,7 +67,8 @@ class Dis(object):
         
         self.u = tf.placeholder(tf.int32)
         self.i = tf.placeholder(tf.int32)
-
+        if self.pairwise:
+            self.j=tf.placeholder(tf.int32)
         self.paras_rnn=[]
         self.model_type=model_type
         self.update_rule = update_rule
@@ -94,10 +89,7 @@ class Dis(object):
                 self.user_bias = tf.Variable(self.param[2])           
                 self.item_bias = tf.Variable(self.param[3])     
 
-            self.u_embedding = tf.nn.embedding_lookup(self.user_embeddings, self.u)
-            self.i_embedding = tf.nn.embedding_lookup(self.item_embeddings, self.i)
-            self.i_bias = tf.gather(self.item_bias, self.i)
-            self.u_bias = tf.gather(self.user_bias, self.u)
+            
 
             self.paras_mf=[self.user_embeddings,self.item_embeddings,self.user_bias,self.item_bias]
 
@@ -147,26 +139,29 @@ class Dis(object):
            x = tf.reshape(x, [-1, self.T, self.H]) #(N, T, H)
            self.paras_rnn.extend([w])
            return x
-        
-    def build_pretrain(self):
-        
+    def all_logits(self,u):
+        u_embedding = tf.nn.embedding_lookup(self.user_embeddings, u)
+        u_bias = tf.gather(self.user_bias, u)
+        return tf.reduce_sum(tf.multiply(u_embedding, self.item_embeddings), 1) + self.item_bias +u_bias
+
+
+    def get_rnn_logists(self, user_sequence,item_sequence):
+
         batch_size = tf.shape(self.item_sequence)[0]
                        
         c_itm, h_itm, c_usr, h_usr = self._get_initial_lstm(batch_size)
-        x_itm = self._item_embedding(inputs=self.item_sequence)
-        x_usr = self._user_embedding(inputs=self.user_sequence)    
+        x_itm = self._item_embedding(inputs=item_sequence)
+        x_usr = self._user_embedding(inputs=user_sequence)    
 
         itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
-        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
+        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)        
         
-        self._init_MF()
         
         for t in range(self.T):
             with tf.variable_scope('D_itm_lstm', reuse=(t!=0)):
                 _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])            
             with tf.variable_scope('D_usr-lstm', reuse=(t!=0)):
-                _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])
-         
+                _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])         
         
 #        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
 #        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
@@ -174,17 +169,34 @@ class Dis(object):
 #        tv = tf.trainable_variables()
 #        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
 
-        self.pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
-        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_RNN)) #+ RNN_Regularizer
-        self.pre_logits_MF = tf.reduce_sum(tf.multiply(self.u_embedding, self.i_embedding), 1) + self.i_bias  +self.u_bias       
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+        pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
         
-        self.pre_joint_logits = self.pre_logits_MF + self.pre_logits_RNN
+
+        return pre_logits_RNN
+
+    def get_mf_logists(self,u,i):
+        self._init_MF()
+        u_embedding = tf.nn.embedding_lookup(self.user_embeddings, u)
+        i_embedding = tf.nn.embedding_lookup(self.item_embeddings, i)
+        i_bias = tf.gather(self.item_bias, i)
+        u_bias = tf.gather(self.user_bias, u)
+        pre_logits_MF = tf.reduce_sum(tf.multiply(u_embedding, i_embedding), 1) + i_bias  +u_bias       
+        return pre_logits_MF
+
+    def build_pretrain(self):
+        
+        self.logits_RNN=self.get_rnn_logists(self.user_sequence,self.item_sequence)
+        self.logits_MF=self.get_mf_logists(self.u,self.i)
+        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_RNN)) #+
+        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+        
+        
+        self.pre_joint_logits = self.logits_MF + self.logits_RNN
 #        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
         
         self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) #+Regularizer*self.lamda
-        # self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
-        self.joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+        self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+        # self.joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
         self.joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
 
         if self.update_rule == 'adam':
@@ -208,7 +220,7 @@ class Dis(object):
         clipped_gradients = [(tf.clip_by_value(_[0], -self.grad_clip, self.grad_clip), _[1]) for _ in grads_and_vars if _[1] is not None and _[0] is not None]
         self.pretrain_updates = optimizer.apply_gradients(grads_and_vars=clipped_gradients)            
             
-        self.all_logits = tf.reduce_sum(tf.multiply(self.u_embedding, self.item_embeddings), 1) + self.item_bias +self.u_bias
+        self.all_logits = self.all_logits(self.u)
 
 
         self.reward = tf.placeholder(tf.float32)
@@ -220,14 +232,25 @@ class Dis(object):
     
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
-            outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.pre_logits_RNN,self.pre_logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
+            if self.sparse_tensor:
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_RNN,self.logits_MF  ], feed_dict = {self.user_sparse_tensor: user_sequence, 
+                            self.item_sparse_tensor: item_sequence, self.rating: rating, self.u: u, self.i: i})
+            else:
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_RNN,self.logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
 
         return outputs
     
-    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False):
+    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False, use_sparse_tensor = None):
+        if use_sparse_tensor is not None and use_sparse_tensor==False:
+            return sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, self.item_sequence: item_sequence, self.u: u, self.i: i})
+
+        if self.sparse_tensor:
+            outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sparse_tensor: user_sequence, 
+                        self.item_sparse_tensor: item_sequence, self.u: u, self.i: i})  
+            return outputs
         if sparse:
             user_sequence,item_sequence=[ii.toarray() for ii in user_sequence],[ii.toarray() for ii in item_sequence]
         outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, 
