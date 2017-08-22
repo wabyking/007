@@ -36,9 +36,9 @@ class Dis(object):
         self.MF_paras=MF_paras
         self.grad_clip = grad_clip
 
-        self.weight_initializer = tf.contrib.layers.xavier_initializer()
+        self.weight_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
         self.const_initializer = tf.constant_initializer(0.0)
-        self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
+        self.emb_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
         self.sparse_tensor=use_sparse_tensor
         # Place holder for features and captions
         self.pairwise=pairwise
@@ -51,8 +51,11 @@ class Dis(object):
                 self.item_neg_sparse_tensor= tf.sparse_placeholder(tf.float32)
                 self.item_neg_sequence = tf.sparse_tensor_to_dense(self.item_sparse_tensor) 
         else:
+            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])  
             self.item_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_U])        
-            self.user_sequence = tf.placeholder(tf.float32, [None, self.T, self.V_M])   
+             
+            if self.pairwise:             
+                self.item_neg_sequence =tf.placeholder(tf.float32, [None, self.T, self.V_U]) 
 
         self.rating = tf.placeholder(tf.float32, [None,])
                         
@@ -65,8 +68,10 @@ class Dis(object):
         
         self.u = tf.placeholder(tf.int32)
         self.i = tf.placeholder(tf.int32)
+        print(self.pairwise)
         if self.pairwise:
             self.j=tf.placeholder(tf.int32)
+            print(" here is J")
         self.paras_rnn=[]
         self.model_type=model_type
         self.update_rule = update_rule
@@ -115,10 +120,9 @@ class Dis(object):
         with tf.variable_scope('D_initial_lstm'):                        
             c_itm = tf.zeros([batch_size, self.H], tf.float32)
             h_itm = tf.zeros([batch_size, self.H], tf.float32)
-            c_usr = tf.zeros([batch_size, self.H], tf.float32)
-            h_usr = tf.zeros([batch_size, self.H], tf.float32) 
+
             # self.paras_rnn.extend([c_itm, h_itm, c_usr, h_usr])   # these variable should be trainable or not                     
-            return c_itm, h_itm, c_usr, h_usr
+            return c_itm, h_itm,
 
     def _item_embedding(self, inputs, reuse=False):
         with tf.variable_scope('D_item_embedding', reuse=reuse):
@@ -143,37 +147,30 @@ class Dis(object):
         return tf.reduce_sum(tf.multiply(u_embedding, self.item_embeddings), 1) + self.item_bias +u_bias
 
 
-    def get_rnn_logists(self, user_sequence,item_sequence):
+    def get_rnn_output(self, item_sequence,itm_lstm_cell, input_type="item",reuse=False):
 
         batch_size = tf.shape(self.item_sequence)[0]
                        
-        c_itm, h_itm, c_usr, h_usr = self._get_initial_lstm(batch_size)
-        x_itm = self._item_embedding(inputs=item_sequence)
-        x_usr = self._user_embedding(inputs=user_sequence)    
-
-        itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
-        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)        
-        
+        c_itm, h_itm = self._get_initial_lstm(batch_size)
+        if input_type=="item":
+            x_itm = self._item_embedding(inputs=item_sequence,reuse=reuse)         
+        else:
+            x_itm = self._user_embedding(inputs=item_sequence,reuse=reuse)
         
         for t in range(self.T):
-            with tf.variable_scope('D_itm_lstm', reuse=(t!=0)):
-                _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])            
-            with tf.variable_scope('D_usr-lstm', reuse=(t!=0)):
-                _, (c_usr, h_usr) = usr_lstm_cell(inputs=x_usr[:,t,:], state=[c_usr, h_usr])         
+            with tf.variable_scope('D_'+input_type+'_lstm', reuse=(reuse or (t!=0))):
+                _, (c_itm, h_itm) = itm_lstm_cell(inputs=x_itm[:,t,:], state=[c_itm, h_itm])                    
         
 #        MF_Regularizer = self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
 #        RNN_Regularizer = tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
         
 #        tv = tf.trainable_variables()
-#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])        
-
-        pre_logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)         
+#        Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])                 
         
-
-        return pre_logits_RNN
+        return h_itm
 
     def get_mf_logists(self,u,i):
-        self._init_MF()
+        
         u_embedding = tf.nn.embedding_lookup(self.user_embeddings, u)
         i_embedding = tf.nn.embedding_lookup(self.item_embeddings, i)
         i_bias = tf.gather(self.item_bias, i)
@@ -181,21 +178,50 @@ class Dis(object):
         pre_logits_MF = tf.reduce_sum(tf.multiply(u_embedding, i_embedding), 1) + i_bias  +u_bias       
         return pre_logits_MF
 
+
     def build_pretrain(self):
+        self._init_MF()
         
-        self.logits_RNN=self.get_rnn_logists(self.user_sequence,self.item_sequence)
+
+        itm_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H)
+        usr_lstm_cell = tf.contrib.rnn.LSTMCell(num_units=self.H) 
+
+        h_usr=self.get_rnn_output(self.user_sequence, usr_lstm_cell,input_type="user")
+        h_itm=self.get_rnn_output(self.item_sequence, itm_lstm_cell)
+
+        self.logits_RNN = self._decode_lstm(h_usr, h_itm, reuse=False)  
         self.logits_MF=self.get_mf_logists(self.u,self.i)
-        self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_RNN)) #+
-        self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
-        
-        
-        self.pre_joint_logits = self.logits_MF + self.logits_RNN
-#        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
-        
-        self.joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) #+Regularizer*self.lamda
-        self.joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
-        # self.joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-        self.joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+        if not self.pairwise:
+
+            with tf.name_scope("pointwise"): 
+
+                self.loss_RNN = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_RNN)) #+
+                self.loss_MF = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.logits_MF)) #+self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+                
+                
+                self.pre_joint_logits = self.logits_MF + self.logits_RNN
+        #        self.pre_joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) + Regularizer
+                
+                self.pre_joint_loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(labels=self.rating, logits=self.pre_joint_logits)) #+Regularizer*self.lamda
+                self.pre_joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+                # self.pre_joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+                self.pre_joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+        else:
+            with tf.name_scope("pairwise"):
+                self.logits_MF_neg=self.get_mf_logists(self.u,self.j)
+                
+                h_itm_neg=self.get_rnn_output(self.item_neg_sequence, itm_lstm_cell,reuse=True)
+                self.logits_RNN_neg =  self._decode_lstm(h_usr, h_itm_neg, reuse=False)  
+                # self.pos_over_neg = tf.sigmoid( self.logits_MF + self.logits_RNN - self.logits_MF_neg -self.logits_RNN_neg)
+                # self.pre_joint_loss= -tf.reduce_mean(tf.log(self.pos_over_neg)) 
+                
+                tv = tf.trainable_variables()
+                Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])
+                self.pre_joint_loss = tf.maximum(0.0, tf.subtract(0.05, tf.subtract(self.logits_MF + self.logits_RNN, self.logits_MF_neg +self.logits_RNN_neg)))
+                self.pre_joint_logits = self.logits_MF + self.logits_RNN
+                self.pre_joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+                # self.pre_joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
+                self.pre_joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
 
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
@@ -208,7 +234,7 @@ class Dis(object):
 
         optimizer = self.optimizer(learning_rate=self.learning_rate)
         if self.model_type == 'joint':
-            grads = tf.gradients(self.joint_loss, tf.trainable_variables())
+            grads = tf.gradients(self.pre_joint_loss, tf.trainable_variables())
         elif self.model_type == 'rnn':
             grads = tf.gradients(self.loss_RNN, tf.trainable_variables())
         elif self.model_type == 'mf':
@@ -222,7 +248,7 @@ class Dis(object):
 
 
         self.reward = tf.placeholder(tf.float32)
-        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_logits)) * self.reward) #+ MF_Regularizer + RNN_Regularizer             
+        self.pg_loss = - tf.reduce_mean(tf.log( tf.sigmoid(self.pre_joint_loss)) * self.reward) #+ MF_Regularizer + RNN_Regularizer             
         
         pg_grads = tf.gradients(self.pg_loss, tf.trainable_variables())               
         pg_grads_and_vars = list(zip(pg_grads, tf.trainable_variables()))
@@ -231,16 +257,28 @@ class Dis(object):
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
             if self.sparse_tensor:
-                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_RNN,self.logits_MF  ], feed_dict = {self.user_sparse_tensor: user_sequence, 
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss,self.logits_RNN,self.logits_MF  ], feed_dict = {self.user_sparse_tensor: user_sequence, 
                             self.item_sparse_tensor: item_sequence, self.rating: rating, self.u: u, self.i: i})
             else:
-                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_RNN,self.logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss,self.logits_RNN,self.logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
-            outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
+            outputs = sess.run([self.pretrain_updates, self.pre_joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
 
         return outputs
-    
+    def pretrain_step_pair(self, sess,   u,user_sequence,i,item_sequence,j,item_neg_sequence): 
+        if user_sequence is not None:
+            if self.sparse_tensor:
+                outputs = sess.run([self.pretrain_updates, self.pre_joint_loss ], feed_dict = {self.user_sparse_tensor: user_sequence, 
+                            self.item_sparse_tensor: item_sequence,  self.u: u, self.i: i ,self.j : j,  self.item_neg_sequence: item_neg_sequence})
+            else:
+                outputs = sess.run([self.pretrain_updates,self.pre_joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
+                            self.item_sequence: item_sequence,  self.u: u, self.i: i,self.j : j,  self.item_neg_sequence: item_neg_sequence})
+        else:
+            outputs = sess.run([self.pretrain_updates, self.pre_joint_loss], feed_dict = {self.rating: rating, self.u: u, self.i: i})
+
+        return outputs
+ 
     def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False, use_sparse_tensor = None):
         if use_sparse_tensor is not None and use_sparse_tensor==False:
             return sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, self.item_sequence: item_sequence, self.u: u, self.i: i})
@@ -274,8 +312,7 @@ class Dis(object):
 #                                                          [i[ind] for ind in indices], 
 #                                                          [u_seq[ind] for ind in indices], 
 #                                                          [i_seq[ind] for ind in indices])
-#            for ind,v in enumerate(joint_loss_list):
-#                labeled_rewards[indices[ind]] = v
+#            for ind,v in enumerate(joint_loss_list #                labeled_rewards[indices[ind]] = v
             
         unlabeled_rewards = self.prediction(sess,u_seq,i_seq,u,i)
         

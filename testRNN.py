@@ -6,7 +6,7 @@ from config import Singleton
 import tensorflow as tf
 from Discrimiator import Dis
 from Generator import Gen
-
+import time
 from dataHelper import FLAGS,helper
 
 
@@ -49,7 +49,8 @@ dis = Dis(itm_cnt = helper.i_cnt,
              MF_paras=paras,
              model_type=FLAGS.model_type,
              update_rule = 'sgd',
-             use_sparse_tensor=FLAGS.sparse_tensor
+             use_sparse_tensor=FLAGS.sparse_tensor,
+             pairwise=FLAGS.pairwise
              )
 dis.build_pretrain()
 
@@ -113,7 +114,8 @@ def main():
         rnn_losses=[]
         mf_losses=[]
         joint_losses=[]
-        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=FLAGS.dns,sess=sess,model=dis,fresh=False)):
+        start=time.time() 
+        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples_point(dns=FLAGS.dns,sess=sess,model=dis,fresh=False)):
 
 
             # feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
@@ -124,8 +126,9 @@ def main():
    
 #            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
 #            _,loss_mf,loss_rnn,joint_loss = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)   
-                     
+                    
             _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            
             # print (mf)
             # print (rnn)
             # print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
@@ -140,6 +143,7 @@ def main():
         # print(sess.run(model.item_embeddings))
         # print(sess.run(model.item_bias))
         # print(sess.run(model.user_bias))
+        print("%.8f s " %(time.time()-start))
         print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
         scores = (helper.evaluateMultiProcess(sess, dis))
         # print(helper.evaluateRMSE(sess,model))
@@ -162,8 +166,22 @@ def main():
 #            print(best_p5)
 
         # print("non multiprocess evalution have spent %f s"%(time.time()-start) )
+def  pairtrain():
+    print (helper.evaluateMultiProcess(sess, dis))
+    joint_losses=[]
+    start=time.time() 
+    for epoch in range(500):
+        for i,((user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)) in enumerate(helper.getBatchFromSamples_pair(dns=FLAGS.dns,sess=sess,model=dis,fresh=False)):
 
+            _,joint_loss = dis.pretrain_step_pair(sess, user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)     
 
+            joint_losses.append(joint_loss) 
+        print("mean loss = %.5f"% np.mean(joint_loss))
+        scores = (helper.evaluateMultiProcess(sess, dis))
+            # print(helper.evaluateRMSE(sess,model))
+        print(scores)
+
+        
 def analysisData():
 	datas=[]
 	for i,(uids,itemids,ratings) in enumerate(helper.getBatch4MF()):
@@ -183,4 +201,7 @@ def analysisData():
 		f.write("\n".join(datas))
              
 if __name__== "__main__":
-	main()
+    if helper.conf.pairwise:
+        pairtrain()
+    else:
+        main()
