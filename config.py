@@ -43,7 +43,7 @@ class Singleton(object):
 
 
 
-		flags.DEFINE_float("learning_rate", 0.01, "Batch size of data while training")#0.0001
+		flags.DEFINE_float("learning_rate", 0.0001, "Batch size of data while training")#0.0001
 		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
 		flags.DEFINE_float("lamda", 0.05, "Batch size of data while training")
 		flags.DEFINE_float("temperature", 5, "Batch size of data while training")
@@ -58,7 +58,7 @@ class Singleton(object):
 		flags.DEFINE_boolean("dns", False, "Test accuracy")
 		flags.DEFINE_boolean("lastone", True, "Test accuracy")
 		flags.DEFINE_boolean("sparse_tensor", False, "Test accuracy")
-		flags.DEFINE_boolean("pairwise", False, "Test accuracy")
+		flags.DEFINE_boolean("pairwise", True, "Test accuracy")
 		FLAGS= flags.FLAGS
 		train_split_data={"moviesLen_100k": FLAGS.moviesLen_100k_split_data , "netflix_6_mouth": FLAGS.netflix_6_mouth_split_data }
 		FLAGS.split_data=train_split_data.get(flags.FLAGS.dataset,0)

@@ -36,10 +36,15 @@ class Dis(object):
         self.MF_paras=MF_paras
         self.grad_clip = grad_clip
 
-        self.weight_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
+        self.weight_initializer = tf.contrib.layers.xavier_initializer()
+        self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
+        # self.weight_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
         self.const_initializer = tf.constant_initializer(0.0)
-        self.emb_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
+
+        # self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        
         self.sparse_tensor=use_sparse_tensor
+
         # Place holder for features and captions
         self.pairwise=pairwise
         if self.sparse_tensor:
@@ -217,7 +222,7 @@ class Dis(object):
                 
                 tv = tf.trainable_variables()
                 Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])
-                self.pre_joint_loss = tf.maximum(0.0, tf.subtract(0.05, tf.subtract(self.logits_MF + self.logits_RNN, self.logits_MF_neg +self.logits_RNN_neg)))
+                self.pre_joint_loss = tf.maximum(0.0, tf.subtract(1.0, tf.subtract(self.logits_MF + self.logits_RNN, self.logits_MF_neg +self.logits_RNN_neg)))
                 self.pre_joint_logits = self.logits_MF + self.logits_RNN
                 self.pre_joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
                 # self.pre_joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
@@ -279,11 +284,8 @@ class Dis(object):
 
         return outputs
  
-    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=False, use_sparse_tensor = None):
-        if use_sparse_tensor is not None and use_sparse_tensor==False:
-            return sess.run(self.pre_joint_logits, feed_dict = {self.user_sequence: user_sequence, self.item_sequence: item_sequence, self.u: u, self.i: i})
-
-        if self.sparse_tensor:
+    def prediction(self, sess, user_sequence, item_sequence, u, i,sparse=True, use_sparse_tensor = None):
+        if self.sparse_tensor and (use_sparse_tensor is None or use_sparse_tensor!=False):
             outputs = sess.run(self.pre_joint_logits, feed_dict = {self.user_sparse_tensor: user_sequence, 
                         self.item_sparse_tensor: item_sequence, self.u: u, self.i: i})  
             return outputs

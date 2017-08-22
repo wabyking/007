@@ -307,6 +307,7 @@ class DataHelper():
 #                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
 #                index=np.argmax(predicted)
 #                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
+        return positive_samples+negative_samples
     def getBatchFromSamples_pair(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
         pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") + ("_pair" if self.conf.pairwise else "") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
@@ -391,7 +392,7 @@ class DataHelper():
 
     def getBatchFromSamples_point(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
-        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse_" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
@@ -449,8 +450,8 @@ class DataHelper():
 
 
     def getBatchFromDNS(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse_" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
 
-        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
@@ -638,7 +639,7 @@ class DataHelper():
             for t in range(-1*self.conf.user_windows_size,0):
                 i_seqs.append(self.item_dict[itemid].get(t,None))
             i_seqss.append(i_seqs)
-        return self.getUserVector(u_seqs),[i for i in map(self.getItemVector, i_seqss)]
+        return getUserVector1(u_seqs),[i for i in map(getItemVector1, i_seqss)]
   
   
     def evaluateMultiProcess(self,sess,model,mp=False):
@@ -661,7 +662,9 @@ class DataHelper():
         _indices,_values=[],[]
         for index,(cols,rows,values)  in enumerate(user_sequence):
             _indices.extend([index,x,y]  for x,y in zip(cols,rows) )   #sorted(zip(cols,rows),key =lambda x:x[0]*2000+x[1] )
-            _values.extend(values)            
+            _values.extend(values)    
+        if len(_indices)==0:
+            return ([[0,0,0]],[0],[len(user_sequence),self.conf.user_windows_size,self.i_cnt ])        
         user_input= (_indices,_values,[len(user_sequence),self.conf.user_windows_size,self.i_cnt ])
         return user_input
     def get_item_sparse_input(self,item_sequence):
@@ -669,6 +672,8 @@ class DataHelper():
         for index,(cols,rows,values)  in enumerate(item_sequence):
             _indices.extend([index,x,y]  for x,y in  zip(cols,rows))
             _values.extend(values)
+        if len(_indices)==0:
+            return ([[0,0,0]],[0],[len(item_sequence),self.conf.user_windows_size,self.u_cnt ])
         item_input= (_indices,_values,[len(item_sequence),self.conf.user_windows_size,self.u_cnt ])
         return item_input
     def get_sparse_intput(self,user_sequence,item_sequence):
@@ -733,7 +738,9 @@ def getScore1(args):
             scores=np.random.random( len(rerank_indexs))
         else:
             # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-            scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
+            # u_seqs,i_seqs=helper.get_sparse_intput([u_seqs] * helper.conf.re_rank_list_length, i_seqss)
+
+            scores = model.prediction(sess,[u_seqs] * helper.conf.re_rank_list_length, i_seqss , [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
 
         # 
         sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
