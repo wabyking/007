@@ -36,12 +36,12 @@ class Dis(object):
         self.MF_paras=MF_paras
         self.grad_clip = grad_clip
 
-        self.weight_initializer = tf.contrib.layers.xavier_initializer()
-        self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
-        # self.weight_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        # self.weight_initializer = tf.contrib.layers.xavier_initializer()
+        # self.emb_initializer = tf.random_uniform_initializer(minval=-1.0, maxval=1.0)
+        self.weight_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
         self.const_initializer = tf.constant_initializer(0.0)
 
-        # self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
         
         self.sparse_tensor=use_sparse_tensor
 
