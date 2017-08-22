@@ -45,7 +45,7 @@ class Singleton(object):
 
 		flags.DEFINE_float("learning_rate", 0.0001, "Batch size of data while training")#0.0001
 		flags.DEFINE_float("grad_clip", 0.1, "Batch size of data while training")
-		flags.DEFINE_float("lamda", 0.05, "Batch size of data while training")
+		flags.DEFINE_float("lamda", 0.1, "Batch size of data while training")
 		flags.DEFINE_float("temperature", 5, "Batch size of data while training")
 
 		flags.DEFINE_float("momentum", 1, "Batch size of data while training")

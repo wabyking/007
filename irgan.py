@@ -174,7 +174,7 @@ def main(checkpoint_dir="model/"):
                                                     
                 u_seq_neg,i_seq_neg = [[ s[j].toarray()  for s in negative_samples ]  for j in range(2)]
                 u_neg,i_neg = [[ s[j]  for s in negative_samples ]  for j in range(2,4)]
-                unlabeled_rewards = dis.prediction(sess,u_seq_neg,i_seq_neg,u_neg,i_neg)
+                unlabeled_rewards = dis.prediction(sess,u_seq_neg,i_seq_neg,u_neg,i_neg,sparse=False)
                 unlabeled_rewards = [2* (sigmoid(v)-0.5) for v in unlabeled_rewards]
 
                 positive_samples = []
@@ -188,7 +188,7 @@ def main(checkpoint_dir="model/"):
               
                 u_seq_pos,i_seq_pos = [[ s[j].toarray()  for s in positive_samples ]  for j in range(2)]
                 u_pos,i_pos = [[ s[j]  for s in positive_samples ]  for j in range(2,4)]
-                labeled_rewards = dis.prediction(sess,u_seq_pos,i_seq_pos,u_pos,i_pos)
+                labeled_rewards = dis.prediction(sess,u_seq_pos,i_seq_pos,u_pos,i_pos,sparse=False)
                 labeled_rewards = [2* (sigmoid(v)-0.5) + 0.1 for v in labeled_rewards]
 
                 pg_loss = gen.unsupervised_train_step(sess, u_seq_neg + u_seq_pos,

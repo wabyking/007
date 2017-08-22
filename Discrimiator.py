@@ -73,10 +73,9 @@ class Dis(object):
         
         self.u = tf.placeholder(tf.int32)
         self.i = tf.placeholder(tf.int32)
-        print(self.pairwise)
         if self.pairwise:
             self.j=tf.placeholder(tf.int32)
-            print(" here is J")
+            print("pairwise training")
         self.paras_rnn=[]
         self.model_type=model_type
         self.update_rule = update_rule
