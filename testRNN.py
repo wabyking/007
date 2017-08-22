@@ -41,7 +41,7 @@ dis = Dis(itm_cnt = helper.i_cnt,
              usr_cnt = helper.u_cnt, 
              dim_hidden = FLAGS.rnn_embedding_dim, 
              n_time_step = FLAGS.item_windows_size, 
-             learning_rate = 0.0005, 
+             learning_rate = FLAGS.learning_rate, 
              grad_clip = 0.2,
              emb_dim = FLAGS.mf_embedding_dim,
              lamda = FLAGS.lamda,
@@ -57,7 +57,7 @@ gen = Gen(itm_cnt = helper.i_cnt,
          usr_cnt = helper.u_cnt, 
          dim_hidden = FLAGS.rnn_embedding_dim, 
          n_time_step = FLAGS.item_windows_size, 
-         learning_rate = 0.01, 
+         learning_rate = FLAGS.learning_rate, 
          grad_clip = 0.2,
          emb_dim = FLAGS.mf_embedding_dim,
          lamda = FLAGS.lamda,
@@ -118,9 +118,10 @@ def main():
             _,loss_mf_d,loss_rnn_d,joint_loss_d,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
             
 
-            rnn_losses_d.append(loss_rnn_d)
-            mf_losses_d.append(loss_mf_d)
-            joint_losses_d.append(joint_loss_d)
+            rnn_losses_d.append(loss_rnn_g)
+            mf_losses_d.append(loss_mf_g)
+            
+            joint_losses_d.append(joint_loss_g)
 
         print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %
               (np.mean(np.array(rnn_losses_d)),np.mean(np.array(mf_losses_d)),np.mean(np.array(joint_losses_d))) )

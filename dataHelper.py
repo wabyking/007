@@ -386,6 +386,7 @@ class DataHelper():
                     u_seqs=self.get_user_sparse_input(u_seqs)
                     i_seqs=self.get_item_sparse_input(i_seqs)
                     i_seqs_neg=self.get_item_sparse_input(i_seqs_neg)
+
                 yield (user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)
  
 
@@ -705,52 +706,41 @@ def getScore1(args):
     else:
         all_rating = model.predictionItems(sess,user_id) # MF rating
         
-    sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
+    candiate_index = helper.items - helper.pos_items.get(user_id, set())
+    scores =[ (index,all_rating[index]) for index in candiate_index ]
+
+    sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
+
+    pre_rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
+    pre_result = getResult(pre_rank_list)
+
     if not rerank or FLAGS.model_type=="mf":
-        
-        # print (sortedScores[:10])
-        # print(helper.test_pos_items.get(user_id,None))
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-        result = getResult(rank_list)
         return result
 
+
+    rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
+    u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
+
+    # print(np.array(u_seqs).shape)
+    # print(np.array(i_seqss).shape)
+    
+    if model is None:
+        print ("there is no model, it is random guessing instead!")
+        scores=np.random.random( len(rerank_indexs))
     else:
-        
+        # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
+        # u_seqs,i_seqs=helper.get_sparse_intput([u_seqs] * helper.conf.re_rank_list_length, i_seqss)
 
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:helper.conf.re_rank_list_length]]
-        pre_result = getResult(rank_list)
-        # print(rank_list)
-        # print("prerank score: %s"%(str(result)))
+        scores = model.prediction(sess,[u_seqs] * helper.conf.re_rank_list_length, i_seqss , [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
 
-        candiate_index = helper.items - helper.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
-        
-        scores =[ (index,all_rating[index]) for index in candiate_index ]
-        sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
+    # 
+    sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
+    rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
 
-        rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
-        u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
-
-        # print(np.array(u_seqs).shape)
-        # print(np.array(i_seqss).shape)
-        
-        if model is None:
-            print ("there is no model, it is random guessing instead!")
-            scores=np.random.random( len(rerank_indexs))
-        else:
-            # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-            # u_seqs,i_seqs=helper.get_sparse_intput([u_seqs] * helper.conf.re_rank_list_length, i_seqss)
-
-            scores = model.prediction(sess,[u_seqs] * helper.conf.re_rank_list_length, i_seqss , [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
-
-        # 
-        sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-        result = getResult(rank_list)
-        # print(rank_list)
-        # print("rerank score: %s"%(str(result-pre_result)))
-        return pre_result,result
+    result = getResult(rank_list)
+    # print(rank_list)
+    # print("rerank score: %s"%(str(result-pre_result)))
+    return pre_result,result
 
 def sparse2dense(sparse):
     return sparse.toarray()

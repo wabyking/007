@@ -221,11 +221,11 @@ class Dis(object):
                 
                 tv = tf.trainable_variables()
                 Regularizer = tf.reduce_sum([ tf.nn.l2_loss(v) for v in tv ])
-                self.pre_joint_loss = tf.maximum(0.0, tf.subtract(1.0, tf.subtract(self.logits_MF + self.logits_RNN, self.logits_MF_neg +self.logits_RNN_neg)))
+                self.pre_joint_loss = tf.maximum(0.0, tf.subtract(0.05, tf.subtract(self.logits_MF + self.logits_RNN, self.logits_MF_neg +self.logits_RNN_neg)))
                 self.pre_joint_logits = self.logits_MF + self.logits_RNN
-                self.pre_joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
+                # self.pre_joint_loss+= self.lamda * (tf.nn.l2_loss(self.user_embeddings) + tf.nn.l2_loss(self.item_embeddings) + tf.nn.l2_loss(self.user_bias) +tf.nn.l2_loss(self.item_bias))
                 # self.pre_joint_loss += self.lamda * (tf.nn.l2_loss(self.u_embedding) + tf.nn.l2_loss(self.i_embedding) + tf.nn.l2_loss(self.u_bias) +tf.nn.l2_loss(self.i_bias))
-                self.pre_joint_loss += self.lamda * tf.reduce_sum([tf.nn.l2_loss(para) for para in self.paras_rnn])
+                self.pre_joint_loss += self.lamda * Regularizer
 
         if self.update_rule == 'adam':
             self.optimizer = tf.train.AdamOptimizer
