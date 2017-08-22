@@ -41,7 +41,7 @@ dis = Dis(itm_cnt = helper.i_cnt,
              usr_cnt = helper.u_cnt, 
              dim_hidden = FLAGS.rnn_embedding_dim, 
              n_time_step = FLAGS.item_windows_size, 
-             learning_rate = FLAGS.learning_rate, 
+             learning_rate = 0.01, 
              grad_clip = 0.2,
              emb_dim = FLAGS.mf_embedding_dim,
              lamda = FLAGS.lamda,
@@ -56,7 +56,7 @@ gen = Gen(itm_cnt = helper.i_cnt,
          usr_cnt = helper.u_cnt, 
          dim_hidden = FLAGS.rnn_embedding_dim, 
          n_time_step = FLAGS.item_windows_size, 
-         learning_rate = FLAGS.learning_rate, 
+         learning_rate = 0.01, 
          grad_clip = 0.2,
          emb_dim = FLAGS.mf_embedding_dim,
          lamda = FLAGS.lamda,
@@ -66,10 +66,6 @@ gen = Gen(itm_cnt = helper.i_cnt,
          update_rule = 'sgd'
          )
 gen.build_pretrain()
-
-# waby = DIS(helper.i_cnt, helper.u_cnt, FLAGS.mf_embedding_dim, lamda=0.1, param=None, initdelta=0.05, learning_rate=0.001)
-
-# tf.get_variable_scope().reuse_variables()    
 
 sess = tf.InteractiveSession()    
 saver = tf.train.Saver(max_to_keep=40) 
@@ -89,7 +85,7 @@ tf.global_variables_initializer().run()
 
 # model.restoreModel("mf.model",save_type="mf")
 
-checkpoint_filepath= "model/joint-25-0.21533.ckpt"
+checkpoint_filepath= "model/joint-25-0.27733.ckpt"
 saver.restore(sess,checkpoint_filepath)
 # model.saveModel(sess,"rnn.model",save_type="rnn")
 
@@ -108,51 +104,38 @@ def main():
     checkpoint_dir="model/"
     best_p5 = 0
     for epoch in range(1000):
-        rnn_losses=[]
-        mf_losses=[]
-        joint_losses=[]
-        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=FLAGS.dns,sess=sess,model=dis,fresh=False)):
-
-
-            # feed_dict={discriminator.u: uid, discriminator.i: itemid,discriminator.label: rating}
-            # _, model_loss,l2_loss,pre_logits = sess.run([discriminator.d_updates,discriminator.point_loss,discriminator.l2_loss,discriminator.pre_logits],feed_dict=feed_dict)    
-
-            # _,l,pre_logits_MF = model.pretrain_step(sess, (np.array(rating)>3.99).astype("int32"), uid, itemid)
-            # print(u_seqs,i_seqs,rating,uid,itemid)
+        rnn_losses_g, mf_losses_g, joint_losses_g = [],[],[]
+        rnn_losses_d, mf_losses_d, joint_losses_d = [],[],[]
+        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=FLAGS.dns,sess=sess,model=None,fresh=False)):
    
-#            _,loss_mf,loss_rnn,joint_loss = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)
-#            _,loss_mf,loss_rnn,joint_loss = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
-            _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
-            # print (mf)
-            # print (rnn)
-            # print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
-            rnn_losses.append(loss_rnn)
-            mf_losses.append(loss_mf)
-            joint_losses.append(joint_loss)       
-            # if i%100==0:
-            #     print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(loss_rnn,loss_mf,joint_loss) )
-                # print("rnn mean logists: %.5f mf mean logits: %.5f"%(logits_rnn,logits_mf))                 
+            _,loss_mf_g,loss_rnn_g,joint_loss_g = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            _,loss_mf_d,loss_rnn_d,joint_loss_d,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            
+            rnn_losses_g.append(loss_rnn_g)
+            mf_losses_g.append(loss_mf_g)
+            joint_losses_g.append(joint_loss_g)
 
-        # print(sess.run(model.user_embeddings))
-        # print(sess.run(model.item_embeddings))
-        # print(sess.run(model.item_bias))
-        # print(sess.run(model.user_bias))
-        print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %(np.mean(np.array(rnn_losses)),np.mean(np.array(mf_losses)),np.mean(np.array(joint_losses))) )
+            rnn_losses_d.append(loss_rnn_d)
+            mf_losses_d.append(loss_mf_d)
+            joint_losses_d.append(joint_loss_d)
+            
+        print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %
+              (np.mean(np.array(rnn_losses_g)),np.mean(np.array(mf_losses_g)),np.mean(np.array(joint_losses_g))) )
+        print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %
+              (np.mean(np.array(rnn_losses_d)),np.mean(np.array(mf_losses_d)),np.mean(np.array(joint_losses_d))) )
         scores = (helper.evaluateMultiProcess(sess, dis))
-        # print(helper.evaluateRMSE(sess,model))
         print(scores)
-#        scores = (helper.evaluateMultiProcess(sess, gen))
-#        # print(helper.evaluateRMSE(sess,model))
-#        print(scores)
-        
-        if FLAGS.model_type == "mf":
-            curentt_p5_score = scores[1]
-        else:
-            curentt_p5_score = scores[1][1]
-
-        if curentt_p5_score > best_p5:        	
-            best_p5 = curentt_p5_score
-            saver.save(sess, checkpoint_dir + '%s-%d-%.5f.ckpt'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5))
+        scores = (helper.evaluateMultiProcess(sess, gen))
+        print(scores)
+#        # print(helper.evaluateRMSE(sess,model))        
+#        if FLAGS.model_type == "mf":
+#            curentt_p5_score = scores[1]
+#        else:
+#            curentt_p5_score = scores[1][1]
+#
+#        if curentt_p5_score > best_p5:        	
+#            best_p5 = curentt_p5_score
+        saver.save(sess, checkpoint_dir + '%s-%d-%.5f.ckpt'% (FLAGS.model_type,FLAGS.re_rank_list_length,0.27733333))
 #            helper.create_dirs("model/mf")
 #            mf_model = 'model/mf/%s-%d-%.5f.pkl'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5)
 #            dis.saveMFModel(sess,mf_model)
