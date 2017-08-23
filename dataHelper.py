@@ -80,6 +80,9 @@ class DataHelper():
         filename = os.path.join(data_dir, self.conf.train_file_name)
        
         df=pd.read_csv(filename,sep="\t", names=["uid","itemid","rating","timestamp"])
+
+        df=df.sort_values(["uid","itemid"])
+
         print(df ["uid"].max()+1)
         if self.conf.dataset == "moviesLen_100k":
             stamp2date = lambda stamp :datetime.datetime.fromtimestamp(stamp)
@@ -228,12 +231,41 @@ class DataHelper():
 
             return self.getUserVector(u_seqs),self.getItemVector(i_seqs)
 
+    def prepare_pair(self,pool=None,mode="train", epoches_size=1,sess=None,model=None):          
+        df = self.data
+        samples=[]           
+        for user in df["uid"].unique():
+            pos_items_time_dict=self.user_item_pos_rating_time_dict.get(user,{})   # null 
+            if len(pos_items_time_dict)==0:
+                continue
+            # generate pesudo labels for the given user
+            if self.conf.dns:
+                all_rating = model.predictionItems(sess,user)                           # todo delete the pos ones            
+                exp_rating = np.exp(np.array(all_rating) *self.conf.temperature)
+                prob = exp_rating / np.sum(exp_rating)
+                negative_items_sampled = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict), p=prob)
+
+            else:
+                negative_items_sampled = np.random.choice(np.arange(self.i_cnt), size=len(pos_items_time_dict))
+            for item in negative_items_sampled:
+                
+                # the pesudo labels are regarded as high-quality negative labels but at the beginning, the pesudo labels are very low-quality ones.
+                u_seqs_neg,i_seqs_neg = helper.getSeqInTime(user,item,0)   
+                
+                positive_item = np.random.choice(list(pos_items_time_dict.keys()))
+                t=pos_items_time_dict.get(positive_item)
+                u_seqs,i_seqs=self.getSeqInTime(user,positive_item,t)
+                samples.append((user,u_seqs,positive_item,i_seqs,item,i_seqs_neg))
+        return samples
+
+
+
     def prepare_dns(self,pool=None,mode="train", epoches_size=1,sess=None,model=None):          
 #        df = self.data
         df = self.test
         positive_samples = []
         negative_samples = []
-                
+                #hehehe
         for user in df["uid"].unique():
 
             pos_items_time_dict=self.user_item_pos_rating_time_dict.get(user,{})   # null 
@@ -254,10 +286,15 @@ class DataHelper():
                 
                 # the pesudo labels are regarded as high-quality negative labels but at the beginning, the pesudo labels are very low-quality ones.
                 u_seqs,i_seqs = helper.getSeqInTime(user,item,0)   
+                # if self.conf.pairwise:
                 negative_samples.append((u_seqs,i_seqs,0,user,item ))
                 
                 # sample positive examples in a random manner
-                positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+                # positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+
+
+                positive_item = np.random.choice(list(pos_items_time_dict.keys()))
+                t=pos_items_time_dict.get(positive_item)
                 u_seqs,i_seqs=self.getSeqInTime(user,positive_item,t)
                 positive_samples.append((u_seqs,i_seqs,1,user,positive_item))
                                     
@@ -270,14 +307,94 @@ class DataHelper():
 #                predicted = model.prediction(sess,u_seqss,i_seqss, [user]*len(u_seqss),[neg_item_id]*len(u_seqss),sparse=True)
 #                index=np.argmax(predicted)
 #                samples.append((u_seqss[index],i_seqss[index],0,user,neg_item_id ))
+        return positive_samples+negative_samples
+    def getBatchFromSamples_pair(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") + ("_pair" if self.conf.pairwise else "") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        print (pickle_name)
+        if os.path.exists(pickle_name) and not fresh:
+            import gc
+            gc.disable()
+            samples=pickle.load(open(pickle_name, 'rb'))
+            gc.enable()        
+        else:
+            samples = self.prepare_pair(mode=mode, epoches_size=epoches_size)            
+            pickle.dump(samples, open(pickle_name, 'wb'),protocol=2)
+
+        if mode=="train" and shuffle:      
+            start=time.time()            
+            
+            random.shuffle(samples)                      
+            print("shuffle time spent %f"% (time.time()-start))
+            # samples =sklearn.utils.shuffle(samples) 
+            # shuffle_index= sklearn.utils.shuffle(np.arange(len(samples)))
+            # samples= np.array(samples)[shuffle_index].tolist()
+
+        n_batches = int(len(samples)/ self.conf.batch_size)
+        print("%d batch"% n_batches)
+                
+        for i in range(0,n_batches):
+            start=time.time()            
+           
+            batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
+                
+            #u_seqs= np.array([[self.getUserVector(u_seq) for u_seq in pairs[0] ] for pairs in batch])
+            #i_seqs= np.array([[self.getItemVector(i_seq) for i_seq in pairs[1] ]  for pairs in batch])
+            if not self.conf.pairwise:
+                u_seqs=[pair[0] for pair in batch]
+                i_seqs=[pair[1] for pair in batch]
+                if not self.conf.sparse_tensor and self.conf.is_sparse:
+                    if pool is not None:
+                        u_seqs=pool.map(sparse2dense, u_seqs)
+                        i_seqs=pool.map(sparse2dense, i_seqs)
+                    else:
+                        u_seqs=[v for v in map(sparse2dense, u_seqs)]
+                        i_seqs=[v for v in map(sparse2dense, i_seqs)]
+
+                if self.conf.rating_flag:
+                    ratings=[float(ii[2]) for ii in batch]
+                else:
+                    ratings=[float(ii[2]>3.99) for ii in batch]
+
+                userids=[pair[3] for pair in batch]
+                itemids=[pair[4] for pair in batch]
+
+                # if i %10==0:
+                #     print("processed %d lines"%i)
+                # # print("spent %f"% (time.time()-start))
+                if self.conf.sparse_tensor:
+                    u_seqs,i_seqs=self.get_sparse_intput(u_seqs,i_seqs)
+                yield u_seqs,i_seqs,ratings,userids,itemids
+            else:
+                #(user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)
+                user=[pair[0] for pair in batch]
+                u_seqs=[pair[1] for pair in batch]
+                item=[pair[2] for pair in batch]
+                i_seqs=[pair[3] for pair in batch]
+                item_neg=[pair[4] for pair in batch]
+                i_seqs_neg=[pair[5] for pair in batch]
+                if not self.conf.sparse_tensor and self.conf.is_sparse:
+                    if pool is not None:
+                        u_seqs=pool.map(sparse2dense, u_seqs)
+                        i_seqs=pool.map(sparse2dense, i_seqs)
+                        item_neg=pool.map(sparse2dense, item_neg)
+                    else:
+                        u_seqs=[v for v in map(sparse2dense, u_seqs)]
+                        i_seqs=[v for v in map(sparse2dense, i_seqs)]
+                        i_seqs_neg=[v for v in map(sparse2dense, i_seqs_neg)]
+                if self.conf.sparse_tensor:
+                    u_seqs=self.get_user_sparse_input(u_seqs)
+                    i_seqs=self.get_item_sparse_input(i_seqs)
+                    i_seqs_neg=self.get_item_sparse_input(i_seqs_neg)
+
+                yield (user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)
  
-        return positive_samples + negative_samples
 
 
-    def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+    def getBatchFromSamples_point(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
-        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
-        print pickle_name
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse_" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
@@ -310,7 +427,7 @@ class DataHelper():
             u_seqs=[pair[0] for pair in batch]
 
             i_seqs=[pair[1] for pair in batch]
-            if self.conf.is_sparse:
+            if not self.conf.sparse_tensor and self.conf.is_sparse:
                 if pool is not None:
                     u_seqs=pool.map(sparse2dense, u_seqs)
                     i_seqs=pool.map(sparse2dense, i_seqs)
@@ -329,13 +446,14 @@ class DataHelper():
             # if i %10==0:
             #     print("processed %d lines"%i)
             # # print("spent %f"% (time.time()-start))
-
+            if self.conf.sparse_tensor:
+                u_seqs,i_seqs=self.get_sparse_intput(u_seqs,i_seqs)
             yield u_seqs,i_seqs,ratings,userids,itemids
 
 
     def getBatchFromDNS(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
+        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_tensor_" if self.conf.sparse_tensor else ( "_sparse_" if self.conf.is_sparse else "_") ) +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
 
-        pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
@@ -362,7 +480,7 @@ class DataHelper():
             batch = samples[i*self.conf.batch_size:(i+1) * self.conf.batch_size]
             u_seqs = [pair[0] for pair in batch]
             i_seqs = [pair[1] for pair in batch]
-            if self.conf.is_sparse:
+            if not self.conf.sparse_tensor and self.conf.is_sparse:
                 if pool is not None:
                     u_seqs = pool.map(sparse2dense, u_seqs)
                     i_seqs = pool.map(sparse2dense, i_seqs)
@@ -373,6 +491,8 @@ class DataHelper():
             userids = [pair[3] for pair in batch]
             itemids = [pair[4] for pair in batch]
             ratings = [float(ii[2]) for ii in batch]
+            if self.conf.sparse_tensor:
+                u_seqs,i_seqs=get_sparse_intput(u_seqs,i_seqs)
             yield u_seqs,i_seqs,ratings,userids,itemids
 #            batch_b = negative_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
 #            batch_a = positive_samples[i*self.conf.batch_size / 2:(i+1) * self.conf.batch_size / 2]
@@ -521,7 +641,7 @@ class DataHelper():
             for t in range(-1*self.conf.user_windows_size,0):
                 i_seqs.append(self.item_dict[itemid].get(t,None))
             i_seqss.append(i_seqs)
-        return self.getUserVector(u_seqs),[i for i in map(self.getItemVector, i_seqss)]
+        return getUserVector1(u_seqs),[i for i in map(getItemVector1, i_seqss)]
   
   
     def evaluateMultiProcess(self,sess,model,mp=False):
@@ -540,6 +660,29 @@ class DataHelper():
 
 
         return np.mean(np.array(results),0)
+    def get_user_sparse_input(self,user_sequence):
+        _indices,_values=[],[]
+        for index,(cols,rows,values)  in enumerate(user_sequence):
+            _indices.extend([index,x,y]  for x,y in zip(cols,rows) )   #sorted(zip(cols,rows),key =lambda x:x[0]*2000+x[1] )
+            _values.extend(values)    
+        if len(_indices)==0:
+            return ([[0,0,0]],[0],[len(user_sequence),self.conf.user_windows_size,self.i_cnt ])        
+        user_input= (_indices,_values,[len(user_sequence),self.conf.user_windows_size,self.i_cnt ])
+        return user_input
+    def get_item_sparse_input(self,item_sequence):
+        _indices,_values=[],[]
+        for index,(cols,rows,values)  in enumerate(item_sequence):
+            _indices.extend([index,x,y]  for x,y in  zip(cols,rows))
+            _values.extend(values)
+        if len(_indices)==0:
+            return ([[0,0,0]],[0],[len(item_sequence),self.conf.user_windows_size,self.u_cnt ])
+        item_input= (_indices,_values,[len(item_sequence),self.conf.user_windows_size,self.u_cnt ])
+        return item_input
+    def get_sparse_intput(self,user_sequence,item_sequence):
+        user_input=self.get_user_sparse_input(user_sequence)
+        item_input=self.get_item_sparse_input(item_sequence)
+        
+        return user_input,item_input
 
 
 
@@ -564,51 +707,41 @@ def getScore1(args):
     else:
         all_rating = model.predictionItems(sess,user_id) # MF rating
         
-    sortedScores = sorted(enumerate(all_rating) ,key= lambda x:x[1], reverse = True )
+    candiate_index = helper.items - helper.pos_items.get(user_id, set())
+    scores =[ (index,all_rating[index]) for index in candiate_index ]
+
+    sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
+
+    pre_rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
+    pre_result = getResult(pre_rank_list)
+
     if not rerank or FLAGS.model_type=="mf":
-        
-        # print (sortedScores[:10])
-        # print(helper.test_pos_items.get(user_id,None))
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-        result = getResult(rank_list)
         return result
 
+
+    rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
+    u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
+
+    # print(np.array(u_seqs).shape)
+    # print(np.array(i_seqss).shape)
+    
+    if model is None:
+        print ("there is no model, it is random guessing instead!")
+        scores=np.random.random( len(rerank_indexs))
     else:
-        
+        # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
+        # u_seqs,i_seqs=helper.get_sparse_intput([u_seqs] * helper.conf.re_rank_list_length, i_seqss)
 
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:helper.conf.re_rank_list_length]]
-        pre_result = getResult(rank_list)
-        # print(rank_list)
-        # print("prerank score: %s"%(str(result)))
+        scores = model.prediction(sess,[u_seqs] * helper.conf.re_rank_list_length, i_seqss , [user_id] * helper.conf.re_rank_list_length, rerank_indexs,use_sparse_tensor=False)
 
-        candiate_index = helper.items - helper.pos_items.get(user_id, set()) # The rest items need to precdicted except the rated ones in train data.
-        
-        scores =[ (index,all_rating[index]) for index in candiate_index ]
-        sortedScores = sorted(scores ,key= lambda x:x[1], reverse = True )
+    # 
+    sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
+    rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
 
-        rerank_indexs= ([ii[0] for ii in sortedScores[:helper.conf.re_rank_list_length]])
-        u_seqs,i_seqss=helper.getTestFeedingData(user_id, rerank_indexs)
-
-        # print(np.array(u_seqs).shape)
-        # print(np.array(i_seqss).shape)
-       
-        
-        if model is None:
-            print ("there is no model, it is random guessing instead!")
-            scores=np.random.random( len(rerank_indexs))
-        else:
-            # scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-            scores = model.prediction(sess, [u_seqs] * helper.conf.re_rank_list_length, i_seqss, [user_id] * helper.conf.re_rank_list_length, rerank_indexs)
-
-        # 
-        sortedScores = sorted(zip(rerank_indexs,scores) ,key= lambda x:x[1], reverse = True )
-
-        rank_list= [1 if ii[0] in helper.test_pos_items.get(user_id, set()) else 0 for ii in sortedScores[:10]]
-
-        result = getResult(rank_list)
-        # print(rank_list)
-        # print("rerank score: %s"%(str(result-pre_result)))
-        return pre_result,result
+    result = getResult(rank_list)
+    # print(rank_list)
+    # print("rerank score: %s"%(str(result-pre_result)))
+    return pre_result,result
 
 def sparse2dense(sparse):
     return sparse.toarray()
@@ -648,6 +781,8 @@ def getItemVector1(item_sets):
                 rows.append(index_i)
                 cols.append(row["uid"])
                 datas.append(row["rating"])
+    if helper.conf.sparse_tensor:
+        return ( rows,cols ,datas)
     result=csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.u_cnt))
     return result
 
@@ -661,6 +796,8 @@ def getUserVector1(user_sets):
                 rows.append(index_i)
                 cols.append(row["itemid"])
                 datas.append(row["rating"])
+    if helper.conf.sparse_tensor:
+        return ( rows,cols ,datas)
     return csr_matrix((datas, (rows, cols)), shape=(helper.conf.user_windows_size, helper.i_cnt))
 
 def getUserVector(user_sets):

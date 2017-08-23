@@ -25,11 +25,11 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
 # load mf model
 if os.path.exists(FLAGS.pretrained_model) and FLAGS.pretrained:
-	print("Fineutune the discrimiator with pretrained MF named " + FLAGS.pretrained_model)
-	paras= pickle.load(open(FLAGS.pretrained_model,"rb"))
+    print("Fineutune the discrimiator with pretrained MF named " + FLAGS.pretrained_model)
+    paras= pickle.load(open(FLAGS.pretrained_model,"rb"))
 else:
-	print("Fail to load pretrained MF model ")
-	paras=None
+    print("Fail to load pretrained MF model ")
+    paras=None
 
 #g1 = tf.Graph()
 #g2 = tf.Graph()
@@ -47,7 +47,9 @@ dis = Dis(itm_cnt = helper.i_cnt,
              initdelta = 0.05,
              MF_paras=paras,
              model_type=FLAGS.model_type,
-             update_rule = 'sgd'
+             update_rule = 'sgd',
+             use_sparse_tensor=FLAGS.sparse_tensor,
+             pairwise=FLAGS.pairwise
              )
 dis.build_pretrain()
 
@@ -62,19 +64,22 @@ gen = Gen(itm_cnt = helper.i_cnt,
          initdelta = 0.05,
          MF_paras=paras,
          model_type=FLAGS.model_type,
-         update_rule = 'sgd'
+         update_rule = 'sgd',
+         use_sparse_tensor=FLAGS.sparse_tensor,
+        
          )
 gen.build_pretrain()
 
 sess = tf.InteractiveSession()    
 saver = tf.train.Saver(max_to_keep=40) 
 tf.global_variables_initializer().run()
-
 #checkpoint_filepath= "model/joint_g_d/joint-25-0.20000.ckpt"
+
 checkpoint_filepath= "model/joint-25-0.25933.ckpt"
 saver.restore(sess,checkpoint_filepath)
 
-#scores=helper.evaluateMultiProcess(sess, dis)
+
+# #scores=helper.evaluateMultiProcess(sess, dis)
 
 #print(helper.evaluateMultiProcess(sess, dis))
 #print(helper.evaluateMultiProcess(sess, gen))
@@ -89,6 +94,7 @@ saver.restore(sess,checkpoint_filepath)
 
 #[[ 0.26111111  0.23333333  0.21        0.27076758  0.26552905  0.30000889]
 # [ 0.16333333  0.154       0.16266667  0.18576331  0.20232514  0.29628877]]
+
 
 #[[ 0.24111111  0.23333333  0.212       0.25956044  0.26670492  0.3048191 ]
 # [ 0.19444444  0.21533333  0.215       0.21885524  0.27984188  0.41407132]]
@@ -134,20 +140,23 @@ def main(checkpoint_dir="model/"):
     #        (u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, 
     #         u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg) = batchGenerator.next()
     
-#            for g_epoch in range(1):            
+
     #            user = df["uid"].unique()[np.random.randint(uid_cnt, size=1)[0]]
     ##            for user in df["uid"].unique():
     #            all_rating = dis.predictionItems(sess,user)                           # todo delete the pos ones
     #            exp_rating = np.exp(np.array(all_rating) * helper.conf.temperature)
     #            prob = exp_rating / np.sum(exp_rating)                
     #            sampled_items = np.random.choice(np.arange(helper.i_cnt), size=128, p=prob)
+
     for e in range(20):
             
         for g_epoch in range(10):    
+
             rewardes,pg_losses=[],[] 
             for user in df["uid"].unique():            
                 # generate pesudo labels for the given user
                 all_rating = gen.predictionItems(sess,user)                           # todo delete the pos ones            
+
                 exp_rating = np.exp(np.array(all_rating) * 50)
                 prob = exp_rating / np.sum(exp_rating)
 #                    sorted(prob,reverse=True)[:10]
@@ -290,7 +299,7 @@ def main(checkpoint_dir="model/"):
 #                joint_losses.append(joint_loss)
 #            print("rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(loss_rnn)),np.mean(np.array(loss_mf)),np.mean(np.array(joint_loss))))        
 #            
-        
+
 #                    if helper.conf.lastone:                                                                                  
 #                    else:
 #                        u_seqss,i_seqss= helper.getSeqOverAlltime(user,item)
@@ -310,4 +319,4 @@ def main(checkpoint_dir="model/"):
 
 
 if __name__== "__main__":
-	main()
+    main()

@@ -6,7 +6,7 @@ from config import Singleton
 import tensorflow as tf
 from Discrimiator import Dis
 from Generator import Gen
-
+import time
 from dataHelper import FLAGS,helper
 
 
@@ -48,10 +48,11 @@ dis = Dis(itm_cnt = helper.i_cnt,
              initdelta = 0.05,
              MF_paras=paras,
              model_type=FLAGS.model_type,
-             update_rule = 'sgd'
+             update_rule = 'sgd',
+             use_sparse_tensor=FLAGS.sparse_tensor,
+             pairwise=FLAGS.pairwise
              )
 dis.build_pretrain()
-
 gen = Gen(itm_cnt = helper.i_cnt, 
          usr_cnt = helper.u_cnt, 
          dim_hidden = FLAGS.rnn_embedding_dim, 
@@ -63,7 +64,8 @@ gen = Gen(itm_cnt = helper.i_cnt,
          initdelta = 0.05,
          MF_paras=paras,
          model_type=FLAGS.model_type,
-         update_rule = 'sgd'
+         update_rule = 'sgd',
+         use_sparse_tensor=FLAGS.sparse_tensor
          )
 gen.build_pretrain()
 
@@ -85,12 +87,14 @@ tf.global_variables_initializer().run()
 
 # model.restoreModel("mf.model",save_type="mf")
 
+
 checkpoint_filepath= "model/joint-25-0.27733.ckpt"
 saver.restore(sess,checkpoint_filepath)
+
 # model.saveModel(sess,"rnn.model",save_type="rnn")
 
-print(helper.evaluateMultiProcess(sess, dis))
-print(helper.evaluateMultiProcess(sess, gen))
+# print(helper.evaluateMultiProcess(sess, dis))
+# print(helper.evaluateMultiProcess(sess, gen))
 #scores=helper.evaluateMultiProcess(sess,dis)
 #if FLAGS.model_type=="mf":
 #    best_p5=scores[1]
@@ -104,9 +108,10 @@ def main():
     checkpoint_dir="model/"
     best_p5 = 0
     for epoch in range(1000):
+
         rnn_losses_g, mf_losses_g, joint_losses_g = [],[],[]
         rnn_losses_d, mf_losses_d, joint_losses_d = [],[],[]
-        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples(dns=FLAGS.dns,sess=sess,model=None,fresh=False)):
+        for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples_point(dns=FLAGS.dns,sess=sess,model=None,fresh=False)):
    
             _,loss_mf_g,loss_rnn_g,joint_loss_g = gen.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
             _,loss_mf_d,loss_rnn_d,joint_loss_d,rnn,mf = dis.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
@@ -123,10 +128,12 @@ def main():
               (np.mean(np.array(rnn_losses_g)),np.mean(np.array(mf_losses_g)),np.mean(np.array(joint_losses_g))) )
         print(" rnn loss : %.5f mf loss : %.5f  : joint loss %.5f" %
               (np.mean(np.array(rnn_losses_d)),np.mean(np.array(mf_losses_d)),np.mean(np.array(joint_losses_d))) )
+
         scores = (helper.evaluateMultiProcess(sess, dis))
         print(scores)
         scores = (helper.evaluateMultiProcess(sess, gen))
         print(scores)
+
 #        # print(helper.evaluateRMSE(sess,model))        
 #        if FLAGS.model_type == "mf":
 #            curentt_p5_score = scores[1]
@@ -136,14 +143,29 @@ def main():
 #        if curentt_p5_score > best_p5:        	
 #            best_p5 = curentt_p5_score
         saver.save(sess, checkpoint_dir + '%s-%d-%.5f.ckpt'% (FLAGS.model_type,FLAGS.re_rank_list_length,0.25933333))
+
 #            helper.create_dirs("model/mf")
 #            mf_model = 'model/mf/%s-%d-%.5f.pkl'% (FLAGS.model_type,FLAGS.re_rank_list_length,best_p5)
 #            dis.saveMFModel(sess,mf_model)
 #            print(best_p5)
 
         # print("non multiprocess evalution have spent %f s"%(time.time()-start) )
+def  pairtrain():
+    print (helper.evaluateMultiProcess(sess, dis))
+    joint_losses=[]
+    start=time.time() 
+    for epoch in range(500):
+        for i,((user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)) in enumerate(helper.getBatchFromSamples_pair(dns=FLAGS.dns,sess=sess,model=dis,fresh=False)):
 
+            _,joint_loss = dis.pretrain_step_pair(sess, user,u_seqs,item,i_seqs,item_neg,i_seqs_neg)     
 
+            joint_losses.append(joint_loss) 
+        print("mean loss = %.5f"% np.mean(joint_loss))
+        scores = (helper.evaluateMultiProcess(sess, dis))
+            # print(helper.evaluateRMSE(sess,model))
+        print(scores)
+
+        
 def analysisData():
 	datas=[]
 	for i,(uids,itemids,ratings) in enumerate(helper.getBatch4MF()):
@@ -163,4 +185,7 @@ def analysisData():
 		f.write("\n".join(datas))
              
 if __name__== "__main__":
-	main()
+    if helper.conf.pairwise:
+        pairtrain()
+    else:
+        main()
