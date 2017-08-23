@@ -277,6 +277,7 @@ class DataHelper():
     def getBatchFromSamples(self,pool=None,dns=True,sess=None,model=None,fresh=True,mode="train", epoches_size=1,shuffle=True):
 
         pickle_name = "tmp/samples_"+ ("dns" +str(self.conf.subset_size)+"_" if dns else "uniform") +("_sparse_" if self.conf.is_sparse else "_") +self.conf.dataset+"_"+str(self.conf.user_windows_size)+"_" +mode+".pkl"
+        print pickle_name
         if os.path.exists(pickle_name) and not fresh:
             import gc
             gc.disable()
