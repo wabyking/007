@@ -32,7 +32,7 @@ class Singleton(object):
             
         flags.DEFINE_integer("user_delta", 7, "Batch size of data while training")
         flags.DEFINE_integer("item_delta", 7, "Batch size of data while training")  # TODO :  user_delta could not equals to item_delta
-        flags.DEFINE_integer("re_rank_list_length", 100, "Batch size of data while training")
+        flags.DEFINE_integer("re_rank_list_length", 25, "Batch size of data while training")
         flags.DEFINE_integer("item_windows_size", 4, "Batch size of data while training")
         flags.DEFINE_integer("user_windows_size", 4, "Batch size of data while training")
         flags.DEFINE_integer("n_epochs", 10, "Batch size of data while training")
