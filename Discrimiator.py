@@ -37,9 +37,9 @@ class Dis(object):
         self.grad_clip = grad_clip
 
 
-        self.weight_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        self.weight_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
         self.const_initializer = tf.constant_initializer(0.0)
-        self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
+        self.emb_initializer = tf.random_uniform_initializer(minval=-0.05, maxval=0.05)
 
 
 #        self.emb_initializer = tf.random_uniform_initializer(minval=-0.1, maxval=0.1)
@@ -262,10 +262,10 @@ class Dis(object):
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
             if self.sparse_tensor:
-                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss,self.logits_RNN,self.logits_MF  ], feed_dict = {self.user_sparse_tensor: user_sequence, 
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss  ], feed_dict = {self.user_sparse_tensor: user_sequence, 
                             self.item_sparse_tensor: item_sequence, self.rating: rating, self.u: u, self.i: i})
             else:
-                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss,self.logits_RNN,self.logits_MF ], feed_dict = {self.user_sequence: user_sequence, 
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.pre_joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
                             self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.pre_joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})
