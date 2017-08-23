@@ -216,10 +216,10 @@ class Gen(object):
     def pretrain_step(self, sess,  rating, u, i,user_sequence=None, item_sequence=None): 
         if user_sequence is not None:
             if self.sparse_tensor:
-                 outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sparse_tensor: user_sequence, 
+                 outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_MF,self.logits_RNN ], feed_dict = {self.user_sparse_tensor: user_sequence, 
                                 self.item_sparse_tensor: item_sequence, self.rating: rating, self.u: u, self.i: i})
             else:
-                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss ], feed_dict = {self.user_sequence: user_sequence, 
+                outputs = sess.run([self.pretrain_updates, self.loss_MF ,self.loss_RNN,self.joint_loss,self.logits_MF,self.logits_RNN ], feed_dict = {self.user_sequence: user_sequence, 
                                 self.item_sequence: item_sequence, self.rating: rating, self.u: u, self.i: i})
         else:
             outputs = sess.run([self.pretrain_updates, self.joint_loss,self.pre_logits_MF], feed_dict = {self.rating: rating, self.u: u, self.i: i})

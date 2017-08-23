@@ -141,7 +141,7 @@ def main(sess,model):
 
         for i,(u_seqs,i_seqs,rating,uid,itemid) in enumerate(helper.getBatchFromSamples_point(dns=FLAGS.dns,sess=sess,model=None,fresh=False)):
    
-            _,loss_mf_g,loss_rnn_g,joint_loss_g = model.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
+            _,loss_mf_g,loss_rnn_g,joint_loss_g ,mf,rnn= model.pretrain_step(sess, rating, uid, itemid, u_seqs, i_seqs)            
            
             
             rnn_losses_g.append(loss_rnn_g)
@@ -215,5 +215,5 @@ if __name__== "__main__":
     if helper.conf.pairwise:
         pairtrain()
     else:
-        main(sess1,gen)
-#        main(sess2,dis)
+#        main(sess1,gen)
+        main(sess2,dis)

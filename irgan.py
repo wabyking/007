@@ -3,7 +3,7 @@ import os
 import datetime
 import numpy as np 
 import pickle
-import config
+
 from tools import log_time_delta
 import time
 from multiprocessing import Pool
@@ -23,24 +23,19 @@ import random
 
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
-# load mf model
-if os.path.exists(FLAGS.pretrained_model) and FLAGS.pretrained:
-    print("Fineutune the discrimiator with pretrained MF named " + FLAGS.pretrained_model)
-    paras= pickle.load(open(FLAGS.pretrained_model,"rb"))
-else:
-    print("Fail to load pretrained MF model ")
-    paras=None
 
-#g1 = tf.Graph()
-#g2 = tf.Graph()
-#sess1 = tf.InteractiveSession(graph=g1)
-#sess2 = tf.InteractiveSession(graph=g2)
+g1 = tf.Graph()
+g2 = tf.Graph()
+sess1 = tf.InteractiveSession(graph=g1)        
+sess2 = tf.InteractiveSession(graph=g2)
 
-dis = Dis(itm_cnt = helper.i_cnt, 
+paras=None
+with g1.as_default():
+    gen = Gen(itm_cnt = helper.i_cnt, 
              usr_cnt = helper.u_cnt, 
              dim_hidden = FLAGS.rnn_embedding_dim, 
              n_time_step = FLAGS.item_windows_size, 
-             learning_rate = 0.001, 
+             learning_rate =  FLAGS.learning_rate, 
              grad_clip = 0.2,
              emb_dim = FLAGS.mf_embedding_dim,
              lamda = FLAGS.lamda,
@@ -48,114 +43,58 @@ dis = Dis(itm_cnt = helper.i_cnt,
              MF_paras=paras,
              model_type=FLAGS.model_type,
              update_rule = 'sgd',
-             use_sparse_tensor=FLAGS.sparse_tensor,
-             pairwise=FLAGS.pairwise
+             use_sparse_tensor=FLAGS.sparse_tensor
              )
-dis.build_pretrain()
-
-gen = Gen(itm_cnt = helper.i_cnt, 
-         usr_cnt = helper.u_cnt, 
-         dim_hidden = FLAGS.rnn_embedding_dim, 
-         n_time_step = FLAGS.item_windows_size, 
-         learning_rate = 0.001, 
-         grad_clip = 0.2,
-         emb_dim = FLAGS.mf_embedding_dim,
-         lamda = FLAGS.lamda,
-         initdelta = 0.05,
-         MF_paras=paras,
-         model_type=FLAGS.model_type,
-         update_rule = 'sgd',
-         use_sparse_tensor=FLAGS.sparse_tensor,
-        
-         )
-gen.build_pretrain()
-
-sess = tf.InteractiveSession()    
-saver = tf.train.Saver(max_to_keep=40) 
-tf.global_variables_initializer().run()
-#checkpoint_filepath= "model/joint_g_d/joint-25-0.20000.ckpt"
-
-checkpoint_filepath= "model/joint-25-0.25933.ckpt"
-saver.restore(sess,checkpoint_filepath)
-
-
-# #scores=helper.evaluateMultiProcess(sess, dis)
-
-#print(helper.evaluateMultiProcess(sess, dis))
-#print(helper.evaluateMultiProcess(sess, gen))
-
-#[[ 0.24111111  0.23266667  0.208       0.26063736  0.27059114  0.30467073]
-# [ 0.29222222  0.25933333  0.21033333  0.38838454  0.41940888  0.49745778]]
-#[[ 0.23777778  0.23533333  0.206       0.25720627  0.26878274  0.29726008]
-# [ 0.26444444  0.252       0.22466667  0.29744831  0.32217434  0.42782576]]
-
-#[[ 0.24666667  0.22733333  0.20333333  0.26392857  0.26178889  0.28930757]
-# [ 0.20222222  0.224       0.21833333  0.21664232  0.27487287  0.40599028]]
-
-#[[ 0.26111111  0.23333333  0.21        0.27076758  0.26552905  0.30000889]
-# [ 0.16333333  0.154       0.16266667  0.18576331  0.20232514  0.29628877]]
+    gen.build_pretrain()
+    init1=tf.global_variables_initializer()
+    saver1 = tf.train.Saver(max_to_keep=50)
+    sess1.run(init1)
+#    checkpoint_filepath= "model/joint-25-0.25933.ckpt"
+#    saver1.restore(sess1,checkpoint_filepath)
+    
+with g2.as_default():
+    dis = Dis(itm_cnt = helper.i_cnt, 
+             usr_cnt = helper.u_cnt, 
+             dim_hidden = FLAGS.rnn_embedding_dim, 
+             n_time_step = FLAGS.item_windows_size, 
+             learning_rate = FLAGS.learning_rate, 
+             grad_clip = 0.2,
+             emb_dim = FLAGS.mf_embedding_dim,
+             lamda = FLAGS.lamda,
+             initdelta = 0.05,
+             MF_paras=paras,
+             model_type=FLAGS.model_type,
+             update_rule = 'sgd',
+             use_sparse_tensor=FLAGS.sparse_tensor
+             )
+    dis.build_pretrain()
+    init2=tf.global_variables_initializer()
+    saver2 = tf.train.Saver(max_to_keep=50)
+    sess2.run(init2)
+    checkpoint_filepath= "model/Dis/joint-25-0.26067-0.28800.ckpt"
+    saver2.restore(sess2,checkpoint_filepath)
 
 
-#[[ 0.24111111  0.23333333  0.212       0.25956044  0.26670492  0.3048191 ]
-# [ 0.19444444  0.21533333  0.215       0.21885524  0.27984188  0.41407132]]
-#[[ 0.02333333  0.026       0.025       0.03447644  0.05083666  0.07598918]
-# [ 0.02444444  0.02666667  0.02566667  0.04551901  0.06735523  0.10214565]]
+print(helper.evaluateMultiProcess(sess2, dis))
+print(helper.evaluateMultiProcess(sess1, gen))
 
-#if FLAGS.model_type=="mf":
-#    best_p5=scores[1]
-#else:
-#    best_p5=scores[1][1]
-#print(scores)
-
-#[[ 0.20888889  0.18466667  0.157       0.24437542  0.24719717  0.28737471]
-# [ 0.14444444  0.14533333  0.14033333  0.17172352  0.21879874  0.32662828]]
-#[[ 0.21111111  0.18466667  0.16        0.23470304  0.23428751  0.27704266]
-# [ 0.21111111  0.208       0.18033333  0.25352937  0.2968801   0.38834072]]
-
-#[[ 0.06222222  0.058       0.047       0.08622233  0.10302443  0.13400635]
-# [ 0.04333333  0.02933333  0.02166667  0.0707058   0.07538342  0.09211432]]
-#[[ 0.21111111  0.18666667  0.161       0.23548052  0.23594752  0.27933239]
-# [ 0.22666667  0.21066667  0.18166667  0.27080088  0.30230874  0.39421854]]
-
-#rnn loss : 0.69211 mf loss : 0.69347  : joint loss 122.25066
-#pg loss : 120.65841 reward : -0.98438 
-
-
-
-#rnn loss : 0.68943 mf loss : 0.69388  : joint loss 124.76549
-#pg loss : 123.84924 reward : 0.00130 
-
-#rnn loss : 0.69394 mf loss : 0.69320 : joint loss 118.36721
-#pg loss : 113.73331 reward : 0.00014 
+setting =False
 
 df = helper.test
 def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
 def main(checkpoint_dir="model/"):
-#        for i,  (u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, 
-#             u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg) in enumerate(helper.getBatchFromDNS(dns=True,sess=sess,model=gen,fresh=False)):                   
-#            batchGenerator = helper.getBatchFromDNS(dns=True,sess=sess,model=gen,fresh=False)
-#            (u_seqs,i_seqs,ratings,userids,itemids) = batchGenerator.next()
-    #        (u_seqs_pos,i_seqs_pos,ratings_pos,userids_pos,itemids_pos, 
-    #         u_seqs_neg,i_seqs_neg,ratings_neg,userids_neg,itemids_neg) = batchGenerator.next()
-    
 
-    #            user = df["uid"].unique()[np.random.randint(uid_cnt, size=1)[0]]
-    ##            for user in df["uid"].unique():
-    #            all_rating = dis.predictionItems(sess,user)                           # todo delete the pos ones
-    #            exp_rating = np.exp(np.array(all_rating) * helper.conf.temperature)
-    #            prob = exp_rating / np.sum(exp_rating)                
-    #            sampled_items = np.random.choice(np.arange(helper.i_cnt), size=128, p=prob)
 
     for e in range(20):
             
-        for g_epoch in range(10):    
+        for g_epoch in range(100):    
 
             rewardes,pg_losses=[],[] 
             for user in df["uid"].unique():            
                 # generate pesudo labels for the given user
-                all_rating = gen.predictionItems(sess,user)                           # todo delete the pos ones            
+                all_rating = gen.predictionItems(sess1,user)                           # todo delete the pos ones            
 
                 exp_rating = np.exp(np.array(all_rating) * 50)
                 prob = exp_rating / np.sum(exp_rating)
@@ -163,42 +102,55 @@ def main(checkpoint_dir="model/"):
                 negative_items_sampled = np.random.choice(np.arange(helper.i_cnt), size=32, p=prob)
 #                negative_items_sampled = np.argsort(prob)[::-1][:32]                                        
                 
-                negative_samples = []                  
-                for item in negative_items_sampled:                                                
-                    u_seqs,i_seqs = helper.getSeqInTime(user,item,0)   
-                    negative_samples.append((u_seqs,i_seqs,user,item ))                        
-                                                    
-                u_seq_neg,i_seq_neg = [[ s[j].toarray()  for s in negative_samples ]  for j in range(2)]
-                u_neg,i_neg = [[ s[j]  for s in negative_samples ]  for j in range(2,4)]
-                unlabeled_rewards =  np.array(dis.prediction(sess,u_seq_neg,i_seq_neg,u_neg,i_neg))
-                unlabeled_rewards = list((unlabeled_rewards-np.mean(unlabeled_rewards))/np.std(unlabeled_rewards))
-                #unlabeled_rewards = [2* (sigmoid(v)-0.5) for v in unlabeled_rewards]
+                negative_samples = []
+                unlabeled_rewards=[]
+                u_seq_neg=[]
+                i_seq_neg = []
+                u_neg=[]
+                i_neg=[]
+                if setting==True: 
+                    for item in negative_items_sampled:                                                
+                        u_seqs,i_seqs = helper.getSeqInTime(user,item,0)   
+                        negative_samples.append((u_seqs,i_seqs,user,item ))                        
+                                                        
+                    u_seq_neg,i_seq_neg = [[ s[j].toarray()  for s in negative_samples ]  for j in range(2)]
+                    u_neg,i_neg = [[ s[j]  for s in negative_samples ]  for j in range(2,4)]
+                    unlabeled_rewards =  np.array(dis.prediction(sess2,u_seq_neg,i_seq_neg,u_neg,i_neg,sparse=False))
+                    unlabeled_rewards = list((unlabeled_rewards-np.mean(unlabeled_rewards))/np.std(unlabeled_rewards))
+                    #unlabeled_rewards = [2* (sigmoid(v)-0.5) for v in unlabeled_rewards]
 
-                positive_samples = []
-                pos_items_time_dict = helper.user_item_pos_rating_time_dict.get(user,{})   
-                if len(pos_items_time_dict)==0:
-                    continue
-                for ind in np.random.randint(len(pos_items_time_dict), size=32):                        
-                    positive_item,t = pos_items_time_dict.items()[ind]                    
-                    u_seqs,i_seqs = helper.getSeqInTime(user,positive_item,t)
-                    positive_samples.append((u_seqs,i_seqs,user,positive_item))
-              
-                u_seq_pos,i_seq_pos = [[ s[j].toarray()  for s in positive_samples ]  for j in range(2)]
-                u_pos,i_pos = [[ s[j]  for s in positive_samples ]  for j in range(2,4)]
-                labeled_rewards = dis.prediction(sess,u_seq_pos,i_seq_pos,u_pos,i_pos)
-                labeled_rewards = [2* (sigmoid(v)-0.5) + 0.1 for v in labeled_rewards]
-                
+                positive_samples=[]
+                labeled_rewards=[]
+                u_seq_pos=[]
+                i_seq_pos = []
+                u_pos=[]
+                i_pos=[]
+                if setting==False:
+                    pos_items_time_dict = helper.user_item_pos_rating_time_dict.get(user,{})   
+                    if len(pos_items_time_dict)==0:
+                        continue
+                    for ind in np.random.randint(len(pos_items_time_dict), size=32):                        
+                        positive_item,t = list(pos_items_time_dict.items())[ind]                    
+                        u_seqs,i_seqs = helper.getSeqInTime(user,positive_item,t)
+                        positive_samples.append((u_seqs,i_seqs,user,positive_item))
+                  
+                    u_seq_pos,i_seq_pos = [[ s[j].toarray()  for s in positive_samples ]  for j in range(2)]
+                    u_pos,i_pos = [[ s[j]  for s in positive_samples ]  for j in range(2,4)]
+                    labeled_rewards = dis.prediction(sess2,u_seq_pos,i_seq_pos,u_pos,i_pos,sparse=False)
+    #                labeled_rewards = [2* (sigmoid(v)-0.5) + 0.1 for v in labeled_rewards]
+                    labeled_rewards=list((labeled_rewards-np.mean(labeled_rewards))/np.std(labeled_rewards)) 
 #                    pg_loss = gen.unsupervised_train_step(sess, u_seq_neg,i_seq_neg,u_neg,i_neg, unlabeled_rewards)
-                pg_loss = gen.unsupervised_train_step(sess, u_seq_neg + u_seq_pos,
+                pg_loss = gen.unsupervised_train_step(sess1, u_seq_neg + u_seq_pos,
                                                       i_seq_neg + i_seq_pos,
                                                       u_neg + u_pos,i_neg + i_pos, unlabeled_rewards + labeled_rewards)
                 pg_losses.append(pg_loss)
-                rewardes.append(unlabeled_rewards)     
+                rewardes.extend(unlabeled_rewards)     
 #            with open("test_lr.txt", "a") as myfile:
 #                myfile.write("pg loss : %.5f reward : %.5f "%(np.mean(np.array(pg_losses)),np.sum(np.array(rewardes)))+"\n")                                   
             if g_epoch % 3 == 0:
                 print("pg loss : %.5f reward : %.5f "%(np.mean(np.array(pg_losses)),np.sum(np.array(rewardes))))
-            
+            g = helper.evaluateMultiProcess(sess1, gen)    
+            print (g)
 #            for d_epoch in range(2): 
 #                rnn_losses,mf_losses,joint_losses=[],[],[]
 #                positive_samples = []
@@ -221,7 +173,7 @@ def main(checkpoint_dir="model/"):
 #                        negative_samples.append((u_seqs,i_seqs,user,item,0 ))
 #                        
 #                        # sample positive examples in a random manner
-#                        positive_item,t = pos_items_time_dict.items()[np.random.randint(len(pos_items_time_dict), size=1)[0]]
+#                        positive_item,t = list(pos_items_time_dict.items())[np.random.randint(len(pos_items_time_dict), size=1)[0]]
 #                        u_seqs,i_seqs = helper.getSeqInTime(user,positive_item,t)
 #                        positive_samples.append((u_seqs,i_seqs,user,positive_item,1))
 #                    samples = negative_samples + positive_samples
@@ -253,7 +205,7 @@ def main(checkpoint_dir="model/"):
             user_item_neg_rating_time_dict = helper.train.groupby("uid").apply(user_item_neg_rating_time_dict).to_dict()
         
             for user in df["uid"].unique():                        
-                all_rating = gen.predictionItems(sess,user)                           # todo delete the pos ones            
+                all_rating = gen.predictionItems(sess1,user)                           # todo delete the pos ones            
                 exp_rating = np.exp(np.array(all_rating) * 50)
                 prob = exp_rating / np.sum(exp_rating)
                    
@@ -269,7 +221,7 @@ def main(checkpoint_dir="model/"):
                 if len(neg_items_time_dict)==0:
                     continue                
                 for ind in np.random.randint(len(neg_items_time_dict), size=32):                        
-                    negative_item,t = neg_items_time_dict.items()[ind]                    
+                    negative_item,t = list(neg_items_time_dict.items())[ind]                    
                     u_seqs,i_seqs = helper.getSeqInTime(user,negative_item,t)
                     negative_samples.append((u_seqs,i_seqs,user,negative_item,0))
                 
@@ -277,15 +229,15 @@ def main(checkpoint_dir="model/"):
                 u_seq,i_seq = [[ s[j].toarray()  for s in samples ]  for j in range(2)]
                 u,i = [[ s[j]  for s in samples ]  for j in range(2,4)]
                 ratings = [ s[4]  for s in samples ] 
-                _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess,ratings, u, i,u_seq,i_seq)                    
+                _,loss_mf,loss_rnn,joint_loss,rnn,mf = dis.pretrain_step(sess1,ratings, u, i,u_seq,i_seq)                    
                 rnn_losses.append(loss_rnn)
                 mf_losses.append(loss_mf)
                 joint_losses.append(joint_loss)
             if d_epoch % 3 == 0:
                 print("rnn loss : %.5f mf loss : %.5f  : joint loss %.5f"%(np.mean(np.array(loss_rnn)),np.mean(np.array(loss_mf)),np.mean(np.array(joint_loss))))            
 
-        d = helper.evaluateMultiProcess(sess, dis)
-        g = helper.evaluateMultiProcess(sess, gen)
+        d = helper.evaluateMultiProcess(sess2, dis)
+        
 #        with open("test_lr.txt", "a") as myfile:
 #            myfile.write("\n".join(str(elem) for elem in d))
 #            myfile.write("\n")
